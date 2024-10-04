@@ -202,4 +202,14 @@ class Client implements ClientInterface {
         return $this->lastCode;
     }
 
+    /**
+     * Returns the CA termsOfService URL
+     * @return mixed|string
+     * @since 4.3.0
+     */
+    public function getTermsOfService() {
+        $meta = $this->getUrl( 'meta' );
+        return $meta['termsOfService'];
+    }
+
 }

@@ -182,7 +182,7 @@ class Controller {
      *
      * @since 4.0.0
      */
-    function isDomainOnlineCurl( $domain, $timeout = 10 ) {
+    public function isDomainOnlineCurl( $domain, $timeout = 10 ) {
         // Check if http:// or https:// is present in the domain
         if ( preg_match( '#^https?://#', $domain ) ) {
             $url = $domain;

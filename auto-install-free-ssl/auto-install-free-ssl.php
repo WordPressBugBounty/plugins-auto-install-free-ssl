@@ -6,7 +6,7 @@
  * Plugin Name: Auto-Install Free SSL
  * Plugin URI:  https://freessl.tech
  * Description: Generate & install Free SSL Certificates, activate force HTTPS redirect with one click to fix insecure links & mixed content warnings, and get automatic Renewal Reminders.
- * Version:     4.2.0
+ * Version:     4.3.0
  * Requires at least: 4.1
  * Requires PHP:      5.6
  * Author:      Free SSL Dot Tech
@@ -143,6 +143,7 @@ use AutoInstallFreeSSL\FreeSSLAuto\Admin\Factory;
 use AutoInstallFreeSSL\FreeSSLAuto\Admin\ForceHttpsPage;
 use AutoInstallFreeSSL\FreeSSLAuto\Admin\Log;
 use AutoInstallFreeSSL\FreeSSLAuto\Email;
+use AutoInstallFreeSSL\FreeSSLAuto\Acme\Client;
 /**
  * Force SSL on frontend and backend
  */
@@ -298,12 +299,10 @@ function aifs_uninstall_cleanup() {
             'aifs_renew_ssl_later_requested_timestamp',
             'aifs_ssl_renewal_reminder_email_last_sent_timestamp',
             'aifs_display_discount_offer_existing_users',
-            //
             'aifs_is_generated_ssl_installed',
-            //
             'aifs_number_of_ssl_generated',
-            //
-            'aifs_delete_plugin_data_on_deactivation',
+            'aifs_ca_terms_of_service_url',
+            'aifs_delete_plugin_data_on_deactivation'
         ];
         // aifs_is_admin_email_invalid
         foreach ( $options as $opt ) {
@@ -875,3 +874,31 @@ function aifs_deactivation_text(  $uninstall_reasons  ) {
 }
 
 aifssl_fs()->add_filter( 'uninstall_reasons', 'aifs_deactivation_text' );
+/**
+ * Get the CA termsOfService URL
+ * @return mixed|string
+ * @since 4.3.0
+ */
+function aifs_get_ca_terms_of_service_url() {
+    // Fetch the option from the WordPress database
+    $tos = get_option( 'aifs_ca_terms_of_service_url' );
+    $current_time = time();
+    $two_days_ago = $current_time - 2 * 24 * 60 * 60;
+    // 2 days ago in seconds
+    // Check if the option exists and 'last_updated' is greater than two days ago
+    if ( $tos && is_array( $tos ) && isset( $tos['url'] ) && isset( $tos['last_updated'] ) && $tos['last_updated'] >= $two_days_ago ) {
+        return $tos['url'];
+    } else {
+        // If no option exists or it's older than 2 days, update the option
+        $client = new Client(AIFS_LE_ACME_V2_LIVE);
+        $terms_url = $client->getTermsOfService();
+        // Update the option in the database
+        $tos_data = array(
+            'url'          => $terms_url,
+            'last_updated' => $current_time,
+        );
+        update_option( 'aifs_ca_terms_of_service_url', $tos_data, false );
+        // Return the updated URL
+        return $terms_url;
+    }
+}

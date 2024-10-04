@@ -679,7 +679,7 @@ class GenerateSSLmanually
 	    add_settings_field(
 		    'agree_to_le_terms',
 		    /* translators: %1$s: Opening HTML 'div' tag; %2$s: Opening HTML 'a' tag; %3$s: Closing 'a' tag; %4$s: Closing HTML 'sup' tag ("Let's Encrypt™" is a nonprofit SSL certificate authority. Opening and closing 'a' tags create a hyperlink with the enclosed text.) */
-		    sprintf(__('%1$sI agree to the %2$sLet\'s Encrypt™ Subscriber Agreement %3$s(required)%4$s', 'auto-install-free-ssl'), '<div id="agree_to_le_terms">', '<a href="https://letsencrypt.org/documents/LE-SA-v1.3-September-21-2022.pdf" target="_blank">', '</a> <sup>', '</sup></div>'),
+		    sprintf(__('%1$sI agree to the %2$sLet\'s Encrypt™ Subscriber Agreement %3$s(required)%4$s', 'auto-install-free-ssl'), '<div id="agree_to_le_terms">', '<a href="'. aifs_get_ca_terms_of_service_url() .'" target="_blank">', '</a> <sup>', '</sup></div>'),
 		    array( $this, 'agree_to_le_terms_callback' ),
 		    'aifs_generate_ssl_manually_admin',
 		    'aifs_generate_ssl_section_id'
