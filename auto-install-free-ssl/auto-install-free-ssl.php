@@ -6,7 +6,7 @@
  * Plugin Name: Auto-Install Free SSL
  * Plugin URI:  https://freessl.tech
  * Description: Generate & install Free SSL Certificates, activate force HTTPS redirect with one click to fix insecure links & mixed content warnings, and get automatic Renewal Reminders.
- * Version:     4.3.0
+ * Version:     4.4.0
  * Requires at least: 4.1
  * Requires PHP:      5.6
  * Author:      Free SSL Dot Tech
