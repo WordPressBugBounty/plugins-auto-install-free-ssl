@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 3.0.0
@@ -44,6 +44,7 @@ class GenerateSSLmanually
     /**
      * Holds the values to be used in the fields callbacks
      */
+	private static $instance; // @since 4.5.0, to keep track of its initialization
     private $options;
     private $save_button_text;
     public $factory;
@@ -57,8 +58,9 @@ class GenerateSSLmanually
 
 	/**
      * Start up
+     * Private constructor to prevent multiple instantiations @since 4.5.0
      */
-    public function __construct()
+    private function __construct()
     {
 	    if (!defined('ABSPATH')) {
 		    die(__( "Access denied", 'auto-install-free-ssl' ));
@@ -98,6 +100,18 @@ class GenerateSSLmanually
 		    wp_redirect(menu_page_url('aifs_generate_ssl_manually'), 301);
 	    }*/
     }
+
+	/**
+	 * This method ensures that only one instance of the class is created.
+	 * @since 4.5.0
+	 * @return GenerateSSLmanually
+	 */
+	public static function getInstance() {
+		if (!isset(self::$instance)) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
     
     /**
      * Add the sub menu
@@ -120,6 +134,7 @@ class GenerateSSLmanually
 		    unset($this->return_array_step1);
 		    update_option( 'aifs_return_array_step1_manually', $this->return_array_step1 );
 		    wp_redirect(menu_page_url('aifs_generate_ssl_manually'), 301);
+		    exit;
 	    }
 
 	    $tos = false;
@@ -335,7 +350,8 @@ class GenerateSSLmanually
             <table style="width: 100%; margin-top: 2%;" id="force-https">
                 <tr>
 	                <?php
-	                $forcehttps = new ForceSSL();
+	                //$forcehttps = new ForceSSL();
+	                $forcehttps = ForceSSL::getInstance();
 					echo $forcehttps->force_ssl_ui();
 	                ?>
                 </tr>
@@ -438,7 +454,8 @@ class GenerateSSLmanually
                 $set_up = __( "We'll manually do the one-time setup for you (worth $49 per website).", 'auto-install-free-ssl' );
             }*/
 
-            if($this->factory->is_cpanel() || (time() > strtotime("June 1, 2024") && time() < strtotime("July 3, 2024"))){
+            //if($this->factory->is_cpanel() || (time() > strtotime("June 1, 2024") && time() < strtotime("July 3, 2024"))){
+            if($offer_details['coupon_code']){
                 $coupon_code = $offer_details['coupon_code'];
                 $query_string = "hide_coupon=true&checkout=true";
             }
@@ -854,7 +871,7 @@ class GenerateSSLmanually
 				$this->appConfig['admin_email'] = [get_option('admin_email')];
 			}*/
 
-			$freessl = new AcmeV2( $homedir . DS . $this->appConfig['certificate_directory'], $this->appConfig['admin_email'], $this->appConfig['is_staging'], $this->appConfig['dns_provider'], $this->appConfig['key_size'], $cPanel, $this->appConfig['server_ip'] );
+			$freessl = new AcmeV2( $homedir . AIFS_DS . $this->appConfig['certificate_directory'], $this->appConfig['admin_email'], $this->appConfig['is_staging'], $this->appConfig['dns_provider'], $this->appConfig['key_size'], $cPanel, $this->appConfig['server_ip'] );
 
 			if ( count( $domains_array ) > 0 ) {
 				//Start the process to generate SSL
@@ -1137,7 +1154,7 @@ class GenerateSSLmanually
 			$file_name = $this->return_array_step1['domain_data'][$domain]['http-01']['file_name'];
 			$file_content = $this->return_array_step1['domain_data'][$domain]['http-01']['payload'];
 			$domain_path = $acmeFactory->getDomainPath($domain);
-			$file_path = $domain_path . DS . $file_name;
+			$file_path = $domain_path . AIFS_DS . $file_name;
 
 			if (!is_dir($domain_path)) {
 				@mkdir($domain_path, 0700, true);
@@ -1196,7 +1213,7 @@ class GenerateSSLmanually
 			    $cPanel  = [
 				    'is_cpanel' => false
 			    ];
-			    $freessl = new AcmeV2( $homedir . DS . $this->appConfig['certificate_directory'], $this->appConfig['admin_email'], $this->appConfig['is_staging'], $this->appConfig['dns_provider'], $this->appConfig['key_size'], $cPanel, $this->appConfig['server_ip'] );
+			    $freessl = new AcmeV2( $homedir . AIFS_DS . $this->appConfig['certificate_directory'], $this->appConfig['admin_email'], $this->appConfig['is_staging'], $this->appConfig['dns_provider'], $this->appConfig['key_size'], $cPanel, $this->appConfig['server_ip'] );
 
 			    $number_of_validated_domains_internal = 0;
 			    $number_of_validated_domains = 0;
@@ -1402,9 +1419,11 @@ class GenerateSSLmanually
 	        } else {
 		        //reset option
 		        unset($this->return_array_step1);
-				update_option( 'aifs_return_array_step1_manually', $this->return_array_step1 );
+				update_option( 'aifs_return_array_step1_manually', "" ); // @since 4.5.0, as $this->return_array_step1 is Undefined
+		        //update_option( 'aifs_return_array_step1_manually', $this->return_array_step1 );
 				//delete_option( 'aifs_is_generated_ssl_installed' ); //Moved to step3GenerateSSL() in AcmeV2.php
 		        wp_redirect(menu_page_url('aifs_generate_ssl_manually'), 301);
+		        exit;
 	        }
         }
 	}

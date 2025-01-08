@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 1.0.0
@@ -77,7 +77,7 @@ class Logger {
      */
     public function write_log( $level, $message, $context ) {
         //get log file name as per date
-        $log_directory = AIFS_UPLOAD_DIR . DS . 'log';
+        $log_directory = AIFS_UPLOAD_DIR . AIFS_DS . 'log';
         if ( !is_dir( $log_directory ) ) {
             @mkdir( $log_directory, 0700, true );
         }
@@ -99,8 +99,8 @@ class Logger {
             );
             //since 3.6.1, Don't translate exception message.
         }
-        /*if(!file_exists($log_directory . DS . ".htaccess")){
-              if(!file_put_contents($log_directory . DS . ".htaccess", "Order deny,allow\nDeny from all")){
+        /*if(!file_exists($log_directory . AIFS_DS . ".htaccess")){
+              if(!file_put_contents($log_directory . AIFS_DS . ".htaccess", "Order deny,allow\nDeny from all")){
                   $exp_text = "Can't create a .htaccess file in the directory '".$log_directory."'. Please manually create it, and paste the following code in it. \n\nOrder deny,allow\nDeny from all";
                   //throw new \RuntimeException("Can't create a .htaccess file in the directory '".$log_directory."'. Please manually create it, and paste the following code in it. \n\nOrder deny,allow\nDeny from all \n\n");
                   $this->exception_sse_friendly($exp_text, __FILE__, __LINE__, false);
@@ -109,7 +109,7 @@ class Logger {
         $factory = new Factory();
         $factory->create_security_files( $log_directory );
         $filename = ( function_exists( 'wp_date' ) ? wp_date( 'Y-m-d' ) . '.log' : date( 'Y-m-d' ) . '.log' );
-        $handle = fopen( $log_directory . DS . $filename, 'a' );
+        $handle = fopen( $log_directory . AIFS_DS . $filename, 'a' );
         $log_text = wp_kses_post( current_time( 'mysql' ) . " [{$level}] {$message}" ) . "\n\n";
         if ( $context['event'] == 'exit' ) {
             $log_text .= "-----------------------------------------------------------------------------------------------------------------------------------------------------------------\n\n";
@@ -162,7 +162,7 @@ class Logger {
      */
     /*public function clean_log_directory_v0(){
     
-            $log_directory = AIFS_UPLOAD_DIR . DS . 'log' . DS;
+            $log_directory = AIFS_UPLOAD_DIR . AIFS_DS . 'log' . AIFS_DS;
             $retain_files = 90; //Previous value was 45
     
             $files = glob($log_directory.'*', GLOB_MARK);
@@ -184,7 +184,7 @@ class Logger {
      * Delete the oldest log files keeping the latest 90 log files.
      */
     public function clean_log_directory() {
-        $log_directory = AIFS_UPLOAD_DIR . DS . 'log' . DS;
+        $log_directory = AIFS_UPLOAD_DIR . AIFS_DS . 'log' . AIFS_DS;
         $retain_files = 90;
         $files = glob( $log_directory . '*.log' );
         $file_count = count( $files );

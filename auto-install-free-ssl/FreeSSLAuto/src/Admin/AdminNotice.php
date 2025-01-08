@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 3.0.0
@@ -32,6 +32,9 @@ namespace AutoInstallFreeSSL\FreeSSLAuto\Admin;
  *
  */
 class AdminNotice {
+    private static $instance;
+
+    // @since 4.5.0, to keep track of its initialization
     public $factory;
 
     public $options;
@@ -44,8 +47,9 @@ class AdminNotice {
 
     /**
      * Start up
+     * Private constructor to prevent multiple instantiations @since 4.5.0
      */
-    public function __construct() {
+    private function __construct() {
         if ( !defined( 'ABSPATH' ) ) {
             die( __( "Access denied", 'auto-install-free-ssl' ) );
         }
@@ -120,12 +124,27 @@ class AdminNotice {
     }
 
     /**
+     * This method ensures that only one instance of the class is created.
+     * @since 4.5.0
+     * @return AdminNotice
+     */
+    public static function getInstance() {
+        if ( !isset( self::$instance ) ) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
+    /**
      * Display Admin notice.
      * Improved since 3.6.0
      *
      * @since 2.1.1
      */
     public function aifs_display_admin_notice() {
+        if ( isset( $_GET['action'] ) && $_GET['action'] == "upload-plugin" ) {
+            return;
+        }
         $admin_notice_text = get_option( 'aifs_admin_notice_if_cpanel_connection_fails' );
         if ( !empty( trim( $admin_notice_text ) ) ) {
             $display_review_request = false;
@@ -214,7 +233,8 @@ class AdminNotice {
                 }
                 $renew_url = menu_page_url( 'aifs_generate_ssl_manually', false );
                 $remind_later = wp_nonce_url( $this->page_url, 'aifs_renew_ssl_later', 'aifsrenewssllater' );
-                $generate_ssl = new GenerateSSLmanually();
+                //$generate_ssl = new GenerateSSLmanually();
+                $generate_ssl = GenerateSSLmanually::getInstance();
                 $renew_button_text = __( "Renew SSL Now", 'auto-install-free-ssl' );
                 /* translators: %s: A date, e.g., December 30, 2023. */
                 $msg_before_expiry = sprintf( __( "Your visitors will see a security warning in red and may leave your website if you don't renew the SSL certificate before the expiry date %s.", 'auto-install-free-ssl' ), $expiry_date );
@@ -443,6 +463,7 @@ class AdminNotice {
             }
             update_option( 'aifs_display_review', 0 );
             wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsrated'] ) );
+            exit;
         } else {
             if ( isset( $_GET['aifslater'] ) ) {
                 if ( !wp_verify_nonce( $_GET['aifslater'], 'aifs_review_later' ) ) {
@@ -451,6 +472,7 @@ class AdminNotice {
                 update_option( 'aifs_display_review', 5 );
                 wp_schedule_single_event( strtotime( "+5 days", time() ), 'aifs_display_review_init' );
                 wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifslater'] ) );
+                exit;
             }
         }
         //Announcement
@@ -460,6 +482,7 @@ class AdminNotice {
             }
             update_option( 'aifs_display_free_premium_offer', 0 );
             wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsannouncementdone'] ) );
+            exit;
         } else {
             if ( isset( $_GET['aifsannouncementlater'] ) ) {
                 if ( !wp_verify_nonce( $_GET['aifsannouncementlater'], 'aifs_announcement_read_later' ) ) {
@@ -468,6 +491,7 @@ class AdminNotice {
                 update_option( 'aifs_display_free_premium_offer', 5 );
                 wp_schedule_single_event( strtotime( "+3 days", time() ), 'aifs_display_announcement_init' );
                 wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsannouncementlater'] ) );
+                exit;
             }
         }
         //SSL Renewal reminder
@@ -477,6 +501,7 @@ class AdminNotice {
             }
             update_option( 'aifs_renew_ssl_later_requested_timestamp', time() );
             wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsrenewssllater'] ) );
+            exit;
         }
         //Discount offer to existing users
         if ( isset( $_GET['aifsdiscountofferdone'] ) ) {
@@ -485,6 +510,7 @@ class AdminNotice {
             }
             update_option( 'aifs_display_discount_offer_existing_users', 0 );
             wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsdiscountofferdone'] ) );
+            exit;
         } else {
             if ( isset( $_GET['aifsdiscountofferlater'] ) ) {
                 if ( !wp_verify_nonce( $_GET['aifsdiscountofferlater'], 'aifs_discount_offer_read_later' ) ) {
@@ -493,6 +519,7 @@ class AdminNotice {
                 update_option( 'aifs_display_discount_offer_existing_users', 5 );
                 wp_schedule_single_event( strtotime( "+3 days", time() ), 'aifs_display_discount_offer_init' );
                 wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsdiscountofferlater'] ) );
+                exit;
             }
         }
     }

@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 3.0.8
@@ -34,24 +34,37 @@ namespace AutoInstallFreeSSL\FreeSSLAuto\Admin;
  */
 class ForceHttpsPage
 {
-    
+	private static $instance; // @since 4.5.0, to keep track of its initialization
     public  $factory;
 
     /**
      * Start up
+     * Private constructor to prevent multiple instantiations @since 4.5.0
      */
-    public function __construct()
+    private function __construct()
     {
 	    if (!defined('ABSPATH')) {
 		    die(__( "Access denied", 'auto-install-free-ssl' ));
 	    }
-        
+
         $this->factory =  new Factory();
-        
+
         add_action('admin_menu', array($this, 'force_https_page_menu' ));
     }
-    
-    
+
+	/**
+     * This method ensures that only one instance of the class is created.
+     * @since 4.5.0
+	 * @return ForceHttpsPage
+	 */
+	public static function getInstance() {
+		if (!isset(self::$instance)) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
+
+
     /**
      *
      * Add the sub menu
@@ -70,15 +83,16 @@ class ForceHttpsPage
             aifssl_fs()->add_submenu_link_item( $menu_title, $this->factory->upgrade_url(false, "&checkout=true"), 'upgrade-license' );
         }
     }
-       
-    
+
+
     /**
      *
      * Activate/Deactivate Force HTTPS page callback
      */
     public function force_https_admin_page()
     {
-	    $forcehttps = new ForceSSL();
+	    //$forcehttps = new ForceSSL();
+	    $forcehttps = ForceSSL::getInstance();
 
 	    $override = isset($_GET['aifsaction']) && $_GET['aifsaction'] == "aifs_force_https_override" && isset($_GET['checked_ssl_manually']) && $_GET['checked_ssl_manually'] == "done" && isset($_GET['valid_ssl_installed']) && $_GET['valid_ssl_installed'] == "yes";
 	    if($override){

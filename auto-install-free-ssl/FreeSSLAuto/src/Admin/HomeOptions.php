@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 1.0.0
@@ -129,7 +129,7 @@ class HomeOptions {
         if ( aifs_is_free_version() ) {
             $button_text .= ' (<a href="' . $this->factory->upgrade_url() . '" title="' . __( "Premium Feature", 'auto-install-free-ssl' ) . '">' . __( "Premium", 'auto-install-free-ssl' ) . '</a>)';
             $text_display .= '  <label>' . $button_text . '</label>
-                                <label class="aifs-toggle-switch-container disabled">
+                                <label class="aifs-toggle-switch-container disabled" title="' . __( "Premium Feature", 'auto-install-free-ssl' ) . '">
                                     <input type="checkbox" name="" disabled>
                                     <span class="aifs-toggle-switch-slider"></span>
                                 </label> <br /><br />
@@ -291,8 +291,8 @@ class HomeOptions {
             add_option( 'aifs_comparison_table_promo_start_time', time() );
         }
         $offer_details = $this->factory->get_offer_details( true );
-        //if($this->factory->is_cpanel() && (time() < $offer_details['offer_end_time']) && ((get_option('aifs_premium_plan_selected') >= 1 && time() < strtotime("January 1, 2025")) || (time() > strtotime("November 1, 2022") && time() < strtotime("January 1, 2025")))){
-        if ( ($this->factory->is_cpanel() || time() > strtotime( "June 1, 2024" ) && time() < strtotime( "July 3, 2024" )) && time() < $offer_details['offer_end_time'] && (get_option( 'aifs_premium_plan_selected' ) >= 1 || time() < strtotime( "January 1, 2025" )) ) {
+        //if(($this->factory->is_cpanel() || (time() > strtotime("June 1, 2024") && time() < strtotime("July 3, 2024"))) && time() < $offer_details['offer_end_time'] && (get_option('aifs_premium_plan_selected') >= 1 || time() < strtotime("January 1, 2026"))){
+        if ( $offer_details['coupon_code'] && time() < $offer_details['offer_end_time'] ) {
             echo '<div id="aifs-promo" class="aifs-promo"><p style="font-size: medium; margin: 0;">';
             echo '<span class="dashicons dashicons-arrow-down-alt" style="font-size: xx-large; color: #5F97FB;"></span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
             $coupon_code = $offer_details['coupon_code'];
@@ -792,6 +792,7 @@ class HomeOptions {
             }
             update_option( 'aifs_free_plan_selected', 1 );
             wp_redirect( admin_url( 'admin.php?page=aifs_generate_ssl_manually' ) );
+            exit;
         } else {
             if ( isset( $_GET['aifspro'] ) ) {
                 //PRO plan selected
@@ -801,6 +802,7 @@ class HomeOptions {
                 update_option( 'aifs_premium_plan_selected', get_option( 'aifs_premium_plan_selected' ) + 1 );
                 //wp_redirect(admin_url('admin.php?page=auto_install_free_ssl-pricing&checkout=true&plan_id=17218&plan_name=pro&billing_cycle=annual&pricing_id=19386&currency=usd'));
                 wp_redirect( $this->factory->upgrade_url( $coupon_code, "checkout=true&plan_id=17218&plan_name=pro&billing_cycle=annual&pricing_id=19386" . (( $coupon_code ? "&hide_coupon=true&currency=usd" : "&currency=usd" )) ) );
+                exit;
             } else {
                 if ( isset( $_GET['aifsprounlimited'] ) ) {
                     //PRO UNLIMITED plan selected
@@ -810,6 +812,7 @@ class HomeOptions {
                     update_option( 'aifs_premium_plan_selected', get_option( 'aifs_premium_plan_selected' ) + 1 );
                     //wp_redirect(admin_url('admin.php?page=auto_install_free_ssl-pricing&checkout=true&plan_id=17218&plan_name=pro&billing_cycle=annual&pricing_id=19771&currency=usd'));
                     wp_redirect( $this->factory->upgrade_url( $coupon_code, "checkout=true&plan_id=17218&plan_name=pro&billing_cycle=annual&pricing_id=19771" . (( $coupon_code ? "&hide_coupon=true&currency=usd" : "&currency=usd" )) ) );
+                    exit;
                 }
             }
         }

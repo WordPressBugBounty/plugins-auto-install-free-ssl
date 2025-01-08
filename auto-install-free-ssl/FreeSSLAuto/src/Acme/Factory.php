@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 1.0.0
@@ -122,7 +122,7 @@ class Factory {
      */
     public function getCertificatesDir() {
         $acme_dir_name = 'acme_v' . $this->acme_version;
-        return ( $this->is_staging ? $this->certificatesBase . DS . $acme_dir_name . DS . 'staging' : $this->certificatesBase . DS . $acme_dir_name . DS . 'live' );
+        return ( $this->is_staging ? $this->certificatesBase . AIFS_DS . $acme_dir_name . AIFS_DS . 'staging' : $this->certificatesBase . AIFS_DS . $acme_dir_name . AIFS_DS . 'live' );
     }
 
     /**
@@ -139,7 +139,7 @@ class Factory {
         if ( strpos( $domain, 'www.' ) !== false && strpos( $domain, 'www.' ) === 0 ) {
             $domain = substr( $domain, 4 );
         }
-        return $this->getCertificatesDir() . DS . $domain . DS;
+        return $this->getCertificatesDir() . AIFS_DS . $domain . AIFS_DS;
     }
 
     /**
@@ -154,8 +154,8 @@ class Factory {
         $certificates_directory = $this->getCertificatesDir();
         $verified_dir = false;
         foreach ( $domains_array as $domain ) {
-            if ( is_file( $certificates_directory . DS . $domain . DS . 'certificate.pem' ) ) {
-                $verified_dir = $certificates_directory . DS . $domain . DS;
+            if ( is_file( $certificates_directory . AIFS_DS . $domain . AIFS_DS . 'certificate.pem' ) ) {
+                $verified_dir = $certificates_directory . AIFS_DS . $domain . AIFS_DS;
                 break;
             }
         }
@@ -193,7 +193,7 @@ class Factory {
             'private_key_bits' => $key_size,
         ];
         if ( aifs_is_os_windows() ) {
-            $config['config'] = __DIR__ . DS . 'openssl.cnf';
+            $config['config'] = __DIR__ . AIFS_DS . 'openssl.cnf';
         }
         $res = openssl_pkey_new( $config );
         if ( $res === false ) {
@@ -232,8 +232,8 @@ class Factory {
             $this->logger->exception_sse_friendly( sprintf( "Can't create directory %s. Please manually create the directory in your certificate directory, set permission 0700, and try again.", $outputDirectory ), __FILE__, __LINE__ );
             //since 3.6.1, Don't translate exception message.
         }
-        file_put_contents( $outputDirectory . DS . 'private.pem', $privateKey );
-        file_put_contents( $outputDirectory . DS . 'public.pem', $details['key'] );
+        file_put_contents( $outputDirectory . AIFS_DS . 'private.pem', $privateKey );
+        file_put_contents( $outputDirectory . AIFS_DS . 'public.pem', $details['key'] );
     }
 
     /**
@@ -278,13 +278,13 @@ keyUsage = nonRepudiation, digitalSignature, keyEncipherment' );
         $dn = [
             'CN' => $domain,
         ];
-        if ( \strlen( $this->countryCode ) > 0 ) {
+        if ( !is_null( $this->countryCode ) && \strlen( $this->countryCode ) > 0 ) {
             $dn['C'] = $this->countryCode;
         }
-        if ( \strlen( $this->state ) > 0 ) {
+        if ( !is_null( $this->state ) && \strlen( $this->state ) > 0 ) {
             $dn['ST'] = $this->state;
         }
-        if ( \strlen( $this->organization ) > 0 ) {
+        if ( !is_null( $this->organization ) && \strlen( $this->organization ) > 0 ) {
             $dn['O'] = $this->organization;
         }
         $csr = openssl_csr_new( $dn, $privateKey, [

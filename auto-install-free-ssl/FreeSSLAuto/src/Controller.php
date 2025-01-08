@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 1.0.0
@@ -33,6 +33,11 @@ use AutoInstallFreeSSL\FreeSSLAuto\Admin\Factory as AdminFactory;
 use Exception;
 //Common actions, even if the control panel is not cPanel
 class Controller {
+    /**
+     * @var Logger
+     */
+    public $logger;
+
     /**
      * Initiates the Controller class.
      */

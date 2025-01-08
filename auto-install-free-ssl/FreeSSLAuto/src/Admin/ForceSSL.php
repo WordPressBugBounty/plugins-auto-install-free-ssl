@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 2.0.0
@@ -43,6 +43,9 @@ class ForceSSL {
      * @since 2.0.0
      * 
      */
+    private static $instance;
+
+    // @since 4.5.0, to keep track of its initialization
     private $logger;
 
     /**
@@ -52,7 +55,8 @@ class ForceSSL {
 
     private $factory;
 
-    public function __construct() {
+    // Private constructor to prevent multiple instantiations @since 4.5.0
+    private function __construct() {
         if ( !defined( 'ABSPATH' ) ) {
             die( __( "Access denied", 'auto-install-free-ssl' ) );
         }
@@ -74,6 +78,18 @@ class ForceSSL {
         $this->admin_email = get_option( 'admin_email' );
         $this->factory = new Factory();
         $this->logger = new Logger();
+    }
+
+    /**
+     * This method ensures that only one instance of the class is created.
+     * @since 4.5.0
+     * @return ForceSSL
+     */
+    public static function getInstance() {
+        if ( !isset( self::$instance ) ) {
+            self::$instance = new self();
+        }
+        return self::$instance;
     }
 
     /**

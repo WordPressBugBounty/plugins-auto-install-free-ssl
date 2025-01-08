@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 3.0.0
@@ -35,14 +35,15 @@ namespace AutoInstallFreeSSL\FreeSSLAuto\Admin;
  */
 class Log
 {
-    
+	private static $instance; // @since 4.5.0, to keep track of its initialization
     public $factory;
 	public $page_url;
 
 	/**
      * Start up
+     * Private constructor to prevent multiple instantiations @since 4.5.0
      */
-    public function __construct()
+	private function __construct()
     {
 	    if (!defined('ABSPATH')) {
 		    die(__( "Access denied", 'auto-install-free-ssl' ));
@@ -55,6 +56,18 @@ class Log
 	    $site_url = parse_url( get_site_url() );
 	    $this->page_url = $site_url['scheme'] . "://" . $site_url['host'] . $_SERVER['REQUEST_URI'];
     }
+
+	/**
+     * This method ensures that only one instance of the class is created.
+	 * @since 4.5.0
+	 * @return Log
+	 */
+	public static function getInstance() {
+		if (!isset(self::$instance)) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
     
     
     /**
@@ -86,7 +99,7 @@ class Log
             //echo '<h1>'. __("SSL Log", 'auto-install-free-ssl'). ' : ' . AIFS_NAME .'</h1>';
             echo aifs_header();
 
-            $log_directory = AIFS_UPLOAD_DIR . DS . 'log' . DS;
+            $log_directory = AIFS_UPLOAD_DIR . AIFS_DS . 'log' . AIFS_DS;
 
             $files = glob($log_directory.'*', GLOB_MARK);
 
@@ -135,7 +148,7 @@ class Log
                                             echo __( "Access denied", 'auto-install-free-ssl' );
                                         }
                                         else {
-                                            $log_directory = AIFS_UPLOAD_DIR . DS . 'log' . DS;
+                                            $log_directory = AIFS_UPLOAD_DIR . AIFS_DS . 'log' . AIFS_DS;
                                             $file_path = $log_directory . trim($_GET['date']) . '.log';
                                         }
                                     }

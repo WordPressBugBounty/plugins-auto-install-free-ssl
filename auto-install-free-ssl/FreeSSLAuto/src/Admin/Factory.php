@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 1.0.0
@@ -91,7 +91,7 @@ class Factory {
         foreach ( $dirs as $dir ) {
             $domain = basename( $dir );
             if ( '_account' !== $domain ) {
-                //@todo add ->  && is_file($dir . DS . 'certificate.pem')
+                //@todo add ->  && is_file($dir . AIFS_DS . 'certificate.pem')
                 $ssl_domains[] = $domain;
             }
         }
@@ -113,8 +113,8 @@ class Factory {
             return true;
         }
         if ( !function_exists( 'aifs_findRegisteredDomain' ) && !function_exists( 'aifs_getRegisteredDomain' ) && !function_exists( 'aifs_validDomainPart' ) ) {
-            require_once AIFS_DIR . DS . 'vendor' . DS . 'usrflo' . DS . 'registered-domain-libs' . DS . 'PHP' . DS . 'effectiveTLDs.inc.php';
-            require_once AIFS_DIR . DS . 'vendor' . DS . 'usrflo' . DS . 'registered-domain-libs' . DS . 'PHP' . DS . 'regDomain.inc.php';
+            require_once AIFS_DIR . AIFS_DS . 'vendor' . AIFS_DS . 'usrflo' . AIFS_DS . 'registered-domain-libs' . AIFS_DS . 'PHP' . AIFS_DS . 'effectiveTLDs.inc.php';
+            require_once AIFS_DIR . AIFS_DS . 'vendor' . AIFS_DS . 'usrflo' . AIFS_DS . 'registered-domain-libs' . AIFS_DS . 'PHP' . AIFS_DS . 'regDomain.inc.php';
         }
         $app_settings = aifs_get_app_settings();
         if ( (isset( $app_settings['cpanel_host'] ) || isset( $app_settings['all_domains'] )) && isset( $app_settings['homedir'] ) ) {
@@ -633,7 +633,7 @@ class Factory {
      * @return mixed|string
      */
     public function set_ssl_parent_directory() {
-        $pos_public_html = strpos( AIFS_DIR, DS . 'public_html' );
+        $pos_public_html = strpos( AIFS_DIR, AIFS_DS . 'public_html' );
         if ( isset( $_SERVER['HOME'] ) && is_writable( $_SERVER['HOME'] ) ) {
             return $_SERVER['HOME'];
         } elseif ( $pos_public_html !== false && is_writable( substr( AIFS_DIR, 0, $pos_public_html ) ) ) {
@@ -654,7 +654,7 @@ class Factory {
             return AIFS_UPLOAD_DIR;
         } elseif ( is_writable( $this->document_root_wp() ) ) {
             $document_root = $this->document_root_wp();
-            $pos_public_html = strpos( $document_root, DS . 'public_html' );
+            $pos_public_html = strpos( $document_root, AIFS_DS . 'public_html' );
             if ( $pos_public_html !== false && is_writable( substr( $document_root, 0, $pos_public_html ) ) ) {
                 return substr( $document_root, 0, $pos_public_html );
             } else {
@@ -685,7 +685,7 @@ class Factory {
         }
         $home_path = get_home_path();
         $last_character = substr( $home_path, strlen( $home_path ) - 1 );
-        if ( $last_character == "/" || $last_character == DS ) {
+        if ( $last_character == "/" || $last_character == AIFS_DS ) {
             return substr( $home_path, 0, strlen( $home_path ) - 1 );
             //remove last character
         } else {
@@ -718,8 +718,8 @@ class Factory {
      */
     public function create_htaccess_file( $dir_path, $data ) {
         $file = ".htaccess";
-        if ( !file_exists( $dir_path . DS . $file ) && (aifs_server_software() == "apache" || aifs_server_software() === false) ) {
-            if ( !file_put_contents( $dir_path . DS . $file, $data ) ) {
+        if ( !file_exists( $dir_path . AIFS_DS . $file ) && (aifs_server_software() == "apache" || aifs_server_software() === false) ) {
+            if ( !file_put_contents( $dir_path . AIFS_DS . $file, $data ) ) {
                 //echo "<pre>$data</pre>";
                 //throw new \RuntimeException("Can't create .htaccess file in the directory '".$dir_path."'. Please manually create it, and paste the above code in it.");
                 /*$this->logger->exception_sse_friendly(sprintf(
@@ -748,8 +748,8 @@ class Factory {
      */
     public function create_web_dot_config_file( $dir_path, $data ) {
         $file = "web.config";
-        if ( !file_exists( $dir_path . DS . $file ) && (aifs_server_software() == "ms-iis" || aifs_server_software() === false) ) {
-            if ( !file_put_contents( $dir_path . DS . $file, $data ) ) {
+        if ( !file_exists( $dir_path . AIFS_DS . $file ) && (aifs_server_software() == "ms-iis" || aifs_server_software() === false) ) {
+            if ( !file_put_contents( $dir_path . AIFS_DS . $file, $data ) ) {
                 //echo "<pre>$data</pre>";
                 //throw new \RuntimeException("Can't create .htaccess file in the directory '".$dir_path."'. Please manually create it, and paste the above code in it.");
                 /*$this->logger->exception_sse_friendly(sprintf(
@@ -1000,23 +1000,25 @@ class Factory {
 
     /**
      * Get the SSL file's path for this website.
-     * Renamed and improved since 4.0.0
+     * Renamed and improved since 4.0.0 and 4.5.0
      * @return false|string
      */
     public function this_domain_get_ssl_file_path() {
-        $app_settings = aifs_get_app_settings();
-        $domain = aifs_get_domain( true );
-        $serveralias = 'www.' . $domain;
-        //initialize the Acme Factory class
-        $acmeFactory = new AcmeFactory($app_settings['homedir'] . '/' . $app_settings['certificate_directory'], $app_settings['acme_version'], $app_settings['is_staging']);
         $certificate = false;
-        $possible_domains = [];
-        //if(aifs_is_free_version() || !aifs_use_wildcard()){ // include these even if wildcard
-        $possible_domains[] = $domain;
-        $possible_domains[] = $serveralias;
-        //}
-        if ( $acmeFactory->getConfirmedSslDir( $possible_domains ) ) {
-            $certificate = $acmeFactory->getConfirmedSslDir( $possible_domains ) . 'certificate.pem';
+        $app_settings = aifs_get_app_settings();
+        if ( is_array( $app_settings ) && isset( $app_settings['homedir'] ) && isset( $app_settings['certificate_directory'] ) && isset( $app_settings['acme_version'] ) && isset( $app_settings['is_staging'] ) ) {
+            //initialize the Acme Factory class
+            $acmeFactory = new AcmeFactory($app_settings['homedir'] . '/' . $app_settings['certificate_directory'], $app_settings['acme_version'], $app_settings['is_staging']);
+            $possible_domains = [];
+            $domain = aifs_get_domain( true );
+            $serveralias = 'www.' . $domain;
+            //if(aifs_is_free_version() || !aifs_use_wildcard()){ // include these even if wildcard
+            $possible_domains[] = $domain;
+            $possible_domains[] = $serveralias;
+            //}
+            if ( $acmeFactory->getConfirmedSslDir( $possible_domains ) ) {
+                $certificate = $acmeFactory->getConfirmedSslDir( $possible_domains ) . 'certificate.pem';
+            }
         }
         return $certificate;
     }
@@ -1147,8 +1149,11 @@ class Factory {
             $generated_ssl = $this->get_generated_ssl_details();
             $installed_ssl = $this->get_installed_ssl_details();
             //Assuming User will install the generated SSL in 2 days (if Cloudflare)
-            if ( $using_cloudflare && time() > $generated_ssl['validFrom_time_t'] + 2 * 24 * 60 * 60 || !$using_cloudflare && strcasecmp( $generated_ssl['serialNumberHex'], $installed_ssl['Serial Number'] ) === 0 ) {
-                return true;
+            if ( $generated_ssl !== false && is_array( $generated_ssl ) ) {
+                // @since 4.5.0
+                if ( $using_cloudflare && time() > $generated_ssl['validFrom_time_t'] + 2 * 24 * 60 * 60 || $installed_ssl !== false && is_array( $installed_ssl ) && !$using_cloudflare && strcasecmp( $generated_ssl['serialNumberHex'], $installed_ssl['Serial Number'] ) === 0 ) {
+                    return true;
+                }
             }
         }
         return false;
@@ -1251,32 +1256,37 @@ class Factory {
      */
     public function get_offer_details( $comparison_table = false ) {
         $offer_end_time = get_option( 'aifs_comparison_table_promo_start_time' ) + AIFS_COUNTDOWN_DURATION;
-        if ( time() > strtotime( "June 1, 2024" ) && time() < strtotime( "July 3, 2024" ) ) {
-            $offer_name = "<strong>Summer Kickoff Sale</strong><br /><br />";
+        $coupon_code = false;
+        if ( time() > strtotime( "January 5, 2025" ) && time() < strtotime( "January 31, 2025" ) ) {
+            $offer_name = "<strong>New Year Sale!!</strong><br /><br />";
             if ( $comparison_table ) {
                 if ( $this->is_cpanel() ) {
-                    $coupon_code = "20SUMMER";
-                    //id: 50301
+                    $coupon_code = "2025NY";
+                    //id: 55119
                 } else {
-                    $coupon_code = "20SUMMERTIME";
-                    //id: 50302
+                    $coupon_code = "2025HNY";
+                    //id: 55120
                 }
             } else {
                 if ( $this->is_cpanel() ) {
-                    $coupon_code = "SUMMER20";
-                    //id: 50303
+                    $coupon_code = "NY2025";
+                    //id: 55121
                 } else {
-                    $coupon_code = "SUMMER";
-                    //id: 50304
+                    $coupon_code = "HNY2025";
+                    //id: 55122
                 }
             }
             $discount_percentage = __( "20%", 'auto-install-free-ssl' );
         } else {
             $offer_name = "";
             if ( $comparison_table ) {
-                $coupon_code = "20AutoInstall";
+                if ( $this->is_cpanel() ) {
+                    $coupon_code = "20AutoInstall";
+                }
             } else {
-                $coupon_code = "AutoInstall20";
+                if ( $this->is_cpanel() ) {
+                    $coupon_code = "AutoInstall20";
+                }
             }
             $discount_percentage = __( "20%", 'auto-install-free-ssl' );
         }

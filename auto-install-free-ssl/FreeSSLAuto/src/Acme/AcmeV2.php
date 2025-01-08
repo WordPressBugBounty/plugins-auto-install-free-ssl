@@ -5,7 +5,7 @@
  * This package is a WordPress Plugin. It issues and installs free SSL certificates in cPanel shared hosting with complete automation.
  *
  * @author Free SSL Dot Tech <support@freessl.tech>
- * @copyright  Copyright (C) 2019-2020, Anindya Sundar Mandal
+ * @copyright  Copyright (C) 2019-2024, Anindya Sundar Mandal
  * @license    http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License, version 3
  * @link       https://freessl.tech
  * @since      Class available since Release 1.0.0
@@ -69,6 +69,10 @@ class AcmeV2 {
 
     private $accountKeyDetails;
 
+    public $key_size;
+
+    public $certificatesDir;
+
     /**
      * Initiates the Let's Encrypt main class.
      *
@@ -101,8 +105,8 @@ class AcmeV2 {
         $factory = new Factory($certificatesBaseDir, 2, $this->is_staging);
         $this->factory = $factory;
         $this->certificatesDir = $factory->getCertificatesDir();
-        $this->accountKeyPath = $this->certificatesDir . DS . '_account' . DS . 'private.pem';
-        $this->kid = ( is_file( \dirname( $this->accountKeyPath ) . DS . 'kid.txt' ) ? file_get_contents( \dirname( $this->accountKeyPath ) . DS . 'kid.txt' ) : '' );
+        $this->accountKeyPath = $this->certificatesDir . AIFS_DS . '_account' . AIFS_DS . 'private.pem';
+        $this->kid = ( is_file( \dirname( $this->accountKeyPath ) . AIFS_DS . 'kid.txt' ) ? file_get_contents( \dirname( $this->accountKeyPath ) . AIFS_DS . 'kid.txt' ) : '' );
         $this->dns_provider = $dns_provider;
         $this->cPanel = $cPanel;
         $this->server_ip = $server_ip;
@@ -292,12 +296,12 @@ class AcmeV2 {
         $challenge = $value['challenge'];
         json_encode( $challenge );
         $payload = $value['http-01']['payload'];
-        $uri = "http://{$domain}/.well-known/acme-challenge/" . $challenge['token'];
+        $uri = "http://" . $domain . "/.well-known/acme-challenge/" . $challenge['token'];
         $web_root_dir = $this->get_web_root_dir( $domain );
         if ( !$this->factory->verify_internally_http_wp( $payload, $uri ) ) {
             $this->logger->log( __( "1st Internal Validation:", 'auto-install-free-ssl' ) . " " . __( "Payload content does not match the challenge URI's content.", 'auto-install-free-ssl' ) );
             //Create htaccess rules in .well-known directory to fix the issue
-            if ( $this->factory->fix_htaccess_challenge_dir( $web_root_dir . DS . '.well-known' ) ) {
+            if ( $this->factory->fix_htaccess_challenge_dir( $web_root_dir . AIFS_DS . '.well-known' ) ) {
                 $this->logger->log( __( ".htaccess rules have been created successfully in the '.well-known' directory.", 'auto-install-free-ssl' ) );
             } else {
                 $this->logger->log( __( "Oops! There was an error creating .htaccess rules in the '.well-known' directory.", 'auto-install-free-ssl' ) );
@@ -352,7 +356,8 @@ class AcmeV2 {
             $this->logger->log( __( "Execution resumed after 2 minutes of sleep.", 'auto-install-free-ssl' ) );
         }
         //Loop to check TXT propagation status
-        if ( $dns_provider['dns_provider_takes_longer_to_propagate'] ) {
+        if ( $dns_provider !== false && is_array( $dns_provider ) && $dns_provider['dns_provider_takes_longer_to_propagate'] ) {
+            // @since 4.5.0
             $this->logger->log( __( "Now check whether the TXT record has been propagated.", 'auto-install-free-ssl' ) );
             $propagated = false;
             //actual value is false
@@ -488,8 +493,8 @@ class AcmeV2 {
                 // if premium version START
                 if ( !aifs_is_free_version() && 'http-01' === $challenge_type ) {
                     $web_root_dir = $this->get_web_root_dir( $domain );
-                    $directory = $web_root_dir . DS . '.well-known' . DS . 'acme-challenge';
-                    $tokenPath = $directory . DS . $challenge['token'];
+                    $directory = $web_root_dir . AIFS_DS . '.well-known' . AIFS_DS . 'acme-challenge';
+                    $tokenPath = $directory . AIFS_DS . $challenge['token'];
                     if ( @unlink( $tokenPath ) ) {
                         $this->logger->log( __( "Deleted challenge file", 'auto-install-free-ssl' ) . ": " . $tokenPath );
                     } else {
@@ -532,8 +537,8 @@ class AcmeV2 {
         // generate private key for domain
         $this->factory->generateKey( $domainPath, $this->key_size );
         // load domain key
-        $privateDomainKey = $this->factory->readPrivateKey( $domainPath . DS . 'private.pem' );
-        $csr = ( $reuseCsr && is_file( $domainPath . DS . 'csr_last.csr' ) ? $this->factory->getCsrContent( $domainPath . DS . 'csr_last.csr' ) : $this->factory->generateCSR( $privateDomainKey, $domains, $this->key_size ) );
+        $privateDomainKey = $this->factory->readPrivateKey( $domainPath . AIFS_DS . 'private.pem' );
+        $csr = ( $reuseCsr && is_file( $domainPath . AIFS_DS . 'csr_last.csr' ) ? $this->factory->getCsrContent( $domainPath . AIFS_DS . 'csr_last.csr' ) : $this->factory->generateCSR( $privateDomainKey, $domains, $this->key_size ) );
         // request certificates creation
         $result = $this->signedRequestV2( $return_array_step1['response']['finalize'], [
             'csr' => $csr,
@@ -584,14 +589,14 @@ class AcmeV2 {
                 return false;
             } else {
                 $this->logger->log( __( "Saving Certificate (CRT) certificate.pem", 'auto-install-free-ssl' ) );
-                file_put_contents( $domainPath . DS . 'certificate.pem', $certificates[0] );
+                file_put_contents( $domainPath . AIFS_DS . 'certificate.pem', $certificates[0] );
                 $this->logger->log( __( "Saving (CABUNDLE) cabundle.pem", 'auto-install-free-ssl' ) );
                 //unset($certificates[0]);
-                //file_put_contents($domainPath.DS.'cabundle.pem', implode( "\n\n", $certificates ));
-                file_put_contents( $domainPath . DS . 'cabundle.pem', $certificates[1] );
+                //file_put_contents($domainPath.AIFS_DS.'cabundle.pem', implode( "\n\n", $certificates ));
+                file_put_contents( $domainPath . AIFS_DS . 'cabundle.pem', $certificates[1] );
                 //this method doesn't include the 3rd certificate, if any
                 $this->logger->log( __( "Saving fullchain.pem", 'auto-install-free-ssl' ) );
-                file_put_contents( $domainPath . DS . 'fullchain.pem', $result );
+                file_put_contents( $domainPath . AIFS_DS . 'fullchain.pem', $result );
                 /* translators: "Let's Encrypt" is a nonprofit SSL certificate authority. */
                 $this->logger->log_v2( 'SUCCESS', __( "Done!!!! Let's Encrypt™ ACME V2 SSL certificate successfully issued!!", 'auto-install-free-ssl' ), [
                     'event' => 'gist',
@@ -753,10 +758,10 @@ class AcmeV2 {
     /**
      *
      *
-     * @return type
+     * @return string
      */
     private function getLastNonce() {
-        if ( preg_match( '~Replay\\-Nonce: (.+)~i', $this->client->lastHeader, $matches ) ) {
+        if ( !is_null( $this->client->lastHeader ) && preg_match( '~Replay\\-Nonce: (.+)~i', $this->client->lastHeader, $matches ) ) {
             return trim( $matches[1] );
         }
         $newNonceUrl = $this->client->getUrl( 'newNonce' );
@@ -770,7 +775,7 @@ class AcmeV2 {
      */
     public function registerNewAcmeAccount() {
         //check if the account key exist
-        if ( !is_file( $this->accountKeyPath ) || strlen( $this->kid ) < 10 || !is_file( \dirname( $this->accountKeyPath ) . DS . 'public.pem' ) ) {
+        if ( !is_file( $this->accountKeyPath ) || strlen( $this->kid ) < 10 || !is_file( \dirname( $this->accountKeyPath ) . AIFS_DS . 'public.pem' ) ) {
             // generate and save new private key for the account
             $this->logger->log( __( "Starting new account registration", 'auto-install-free-ssl' ) );
             $this->factory->generateKey( \dirname( $this->accountKeyPath ), $this->key_size );
@@ -780,7 +785,7 @@ class AcmeV2 {
                 $this->kid = $this->client->getLastLocation();
                 $this->logger->log( 'kid: ' . $this->kid );
                 //Save the kid in a text file
-                if ( file_put_contents( \dirname( $this->accountKeyPath ) . DS . 'kid.txt', $this->kid ) !== false ) {
+                if ( file_put_contents( \dirname( $this->accountKeyPath ) . AIFS_DS . 'kid.txt', $this->kid ) !== false ) {
                     $this->logger->log( __( "Congrats! A new account has been registered successfully.", 'auto-install-free-ssl' ) );
                     $return_array['proceed'] = true;
                     if ( get_option( 'aifs_is_admin_email_invalid' ) ) {
@@ -803,8 +808,8 @@ class AcmeV2 {
                 $this->logger->log_v2( 'debug', __( "Sorry, there was a problem registering the account. Please try again. Let's Encrypt™ server response given below.", 'auto-install-free-ssl' ) );
                 //Delete the key files as the registration failed
                 if ( is_file( $this->accountKeyPath ) ) {
-                    unlink( \dirname( $this->accountKeyPath ) . DS . 'private.pem' );
-                    unlink( \dirname( $this->accountKeyPath ) . DS . 'public.pem' );
+                    unlink( \dirname( $this->accountKeyPath ) . AIFS_DS . 'private.pem' );
+                    unlink( \dirname( $this->accountKeyPath ) . AIFS_DS . 'public.pem' );
                 }
                 if ( $this->logger->is_cli() ) {
                     $this->logger->log_v2( 'debug', print_r( $response, true ) );
