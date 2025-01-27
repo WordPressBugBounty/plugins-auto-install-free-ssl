@@ -5,7 +5,7 @@ License URI: http://www.gnu.org/licenses/gpl-3.0.html
 Tags: free ssl, ssl certificate, https redirect, free ssl certificate, ssl security
 Requires at least: 4.1
 Tested up to: 6.7
-Stable tag: 4.5.0
+Stable tag: 4.5.1
 Requires PHP: 5.6
 
 Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADLOCK in the browser, get automatic Renewal Reminders from plugin.
@@ -24,7 +24,7 @@ Here is where 'Auto-Install Free SSL' comes into play. This WordPress plugin pro
 https://vimeo.com/745390051
 
 
-`    456,500+ DOWNLOADS!!`
+`    463,000+ DOWNLOADS!!`
 
 
 ### Minimum System Requirements
@@ -395,6 +395,9 @@ If you have an unlimited site license and created a cron job manually, ensure yo
 
 
 == Changelog ==
+= 4.5.1 =
+* Updated the Freemius WordPress SDK to the latest version.
+
 = 4.5.0 =
 * Updated the Freemius WordPress SDK to version 2.10.1.
 * Improved some code.
