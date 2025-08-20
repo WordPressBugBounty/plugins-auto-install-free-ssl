@@ -6,7 +6,7 @@
  * Plugin Name: Auto-Install Free SSL
  * Plugin URI:  https://freessl.tech
  * Description: Generate & install Free SSL Certificates, activate force HTTPS redirect with one click to fix insecure links & mixed content warnings, and get automatic Renewal Reminders.
- * Version:     4.5.1
+ * Version:     4.6.0
  * Requires at least: 4.1
  * Requires PHP:      5.6
  * Author:      Free SSL Dot Tech
@@ -501,41 +501,78 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
     }
 
     /**
-     * Get IPv4 or IPv6 of this server
-     * improved since 4.1.0
+     * Get IPv4 or IPv6 of this server.
+     * Attempts to return the public IP address for online servers and handles localhost too.
+     * improved since 4.6.0
      * @return mixed|string
      * @since 3.6.0
      */
     function aifs_ip_of_this_server() {
-        $serverIP = false;
-        if ( isset( $_SERVER['SERVER_ADDR'] ) ) {
-            $serverIP = $_SERVER['SERVER_ADDR'];
+        // Step 1: Check SERVER_ADDR if it exists and is not a loopback address
+        if ( isset( $_SERVER['SERVER_ADDR'] ) && !aifs_is_loopback( $_SERVER['SERVER_ADDR'] ) ) {
+            return $_SERVER['SERVER_ADDR'];
+        }
+        $domain = aifs_get_domain( true );
+        $factory = new Factory();
+        if ( $factory->is_ip_address( $domain ) ) {
+            return $domain;
         } else {
-            // Get the website address (domain name)
+            // Get this website's address (domain name)
             $websiteAddress = aifs_get_domain( false );
-            // Try getting IP using gethostbyname
+            // Step 2: Try resolving the website address to an IP address
             $ip = gethostbyname( $websiteAddress );
-            // Check if gethostbyname returned a valid IP
-            if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) ) {
-                $serverIP = $ip;
-            } else {
-                if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
-                    $serverIP = $ip;
-                } else {
-                    // Fallback to dns_get_record if gethostbyname didn't return a valid IP
-                    $records = dns_get_record( $websiteAddress, DNS_A );
-                    $serverIP = ( isset( $records[0]['ip'] ) ? $records[0]['ip'] : '' );
+            // Resolve hostname to IP (IPv4)
+            // If the resolved IP is a valid IP and not a loopback address, return it
+            if ( filter_var( $ip, FILTER_VALIDATE_IP ) && !aifs_is_loopback( $ip ) ) {
+                return $ip;
+            }
+            // Step 3: Try resolving the website address to an IP address using dns_get_record
+            $records = dns_get_record( $websiteAddress, DNS_A | DNS_AAAA );
+            if ( $records ) {
+                foreach ( $records as $record ) {
+                    if ( $record['type'] == 'A' ) {
+                        $ip = $record['ip'];
+                        // If the resolved IP is a valid IPV4 and not a loopback address, return it
+                        if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) && !aifs_is_loopback( $ip ) ) {
+                            return $ip;
+                        }
+                    } elseif ( $record['type'] == 'AAAA' ) {
+                        $ip = $record['ipv6'];
+                        // If the resolved IP is a valid IPV6 and not a loopback address, return it
+                        if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) && !aifs_is_loopback( $ip ) ) {
+                            return $ip;
+                        }
+                    }
                 }
             }
-        }
-        if ( $serverIP && (filter_var( $serverIP, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) || filter_var( $serverIP, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 )) ) {
-            return $serverIP;
-        } else {
-            return false;
+            // Step 4: Fallback to SERVER_ADDR (loopback for localhost)
+            return $_SERVER['SERVER_ADDR'] ?? '127.0.0.1';
         }
     }
 
-    //Attach the JS
+    /**
+     * Function to check if an IP is a loopback address.
+     * Handles both IPv4 (127.0.0.0/8) and IPv6 (::1)
+     * @param $ip
+     * @return bool
+     * @since 4.6.0
+     */
+    function aifs_is_loopback(  $ip  ) {
+        if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) ) {
+            // Check if the IP starts with '127.' (127.0.0.0/8 range)
+            return strpos( $ip, '127.' ) !== false && strpos( $ip, '127.' ) === 0;
+        } elseif ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+            // Normalize IPv6 address to compressed form
+            $normalized = inet_ntop( inet_pton( $ip ) );
+            return $normalized === '::1';
+        }
+        return false;
+    }
+
+    /**
+     * Attach the JS
+     * @param $hook
+     */
     function aifs_add_js_enqueue(  $hook  ) {
         // Only add to this admin.php admin page -> page=aifs_add_dns_service_provider
         if ( !(aifs_is_free_version() && aifs_is_existing_user() && isset( $_GET['page'] ) && ($_GET['page'] === 'auto_install_free_ssl' || $_GET['page'] !== 'aifs_generate_ssl_manually' || $_GET['page'] !== 'aifs_force_https')) ) {

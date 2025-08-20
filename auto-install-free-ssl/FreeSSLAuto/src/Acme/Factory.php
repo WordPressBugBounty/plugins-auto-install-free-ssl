@@ -323,13 +323,16 @@ keyUsage = nonRepudiation, digitalSignature, keyEncipherment' );
         );
         $remote_get = wp_remote_get( $uri, $args );
         if ( is_wp_error( $remote_get ) ) {
-            $response = 'error';
+            $response = "error: is_wp_error() returned true.";
+            //improved @since 4.6.0
         } else {
             $response = trim( wp_remote_retrieve_body( $remote_get ) );
         }
         if ( trim( $payload ) === $response ) {
             return true;
         } else {
+            //Next 1 line @since 4.6.0, to provide important debug information
+            $this->logger->log_v2( 'error', "The content of the challenge URI ({$uri}) is given below: <br />\n<pre>" . htmlspecialchars( $response, ENT_QUOTES, 'UTF-8' ) . "</pre>" );
             return false;
         }
     }

@@ -182,50 +182,83 @@ class GenerateSSLmanually
 	        <?= aifs_header() ?>
 
             <?php
-            if(!$tos && !isset($this->return_array_step1['current_step_number']) && !isset( $_POST['aifs_challenge_type'] )) {
+            $disable_button = false;
+
+            if( !(is_array($this->return_array_step1) && isset($this->return_array_step1['ssl_cert_generated']) && $this->return_array_step1['ssl_cert_generated']) ) {
+                //if(!$tos && !isset( $_POST['aifs_challenge_type'] )) {
+
+                //if(!$tos && !isset($this->return_array_step1['current_step_number']) && !isset( $_POST['aifs_challenge_type'] )) {
                 //Step no. is 1
 	            $domain = aifs_get_domain( true );
-
 	            $server_ip = aifs_ip_of_this_server();
-	            if ( ( $server_ip && $this->factory->is_localhost( $server_ip ) ) || $this->factory->is_localhost( $domain ) ) {
-		            echo '<div class="aifs-ip-address">';
+
+	            //if ( $this->factory->is_localhost( $domain ) || ( $server_ip && $this->factory->is_localhost( $server_ip ) ) ) { // changed order since 4.6.0 to check domain first
+
+                if ( $this->factory->is_localhost( $server_ip ) || $this->factory->is_localhost( $domain ) ) {
+	                //$disable_button = true; //DNS-01 may possible if it's a registered domain name
+
+                    echo '<div class="aifs-ip-address">';
 		            /* translators: %s: an IP address, e.g., 127.0.0.1 */
-		            echo '<strong>' . sprintf( __( "Your WordPress website is hosted on a local server (localhost): %s", 'auto-install-free-ssl' ), $domain ) . '</strong>';
+		            echo "<strong>Oops!!<br /><br />" . sprintf( __( "Your WordPress website is hosted on a local server (localhost): %s", 'auto-install-free-ssl' ), $domain );
+		                if($this->factory->is_ip_address( $domain )){
+			                $disable_button = true;
+		                }
+		                else{
+			                echo ", IP address: $server_ip";
+			                //@todo if $domain DOES NOT follows valid domain name format, $disable_button = true;
+		                }
+		            echo "</strong>";
+
 		            /* translators: "Let's Encrypt™" is a nonprofit SSL certificate authority. */
-		            echo '<p>' . __( "Let's Encrypt™ does not issue SSL certificates for localhost. Let's Encrypt™ certificates are designed for public domain names, which need to be accessible over the internet for the validation process. Since localhost is not a publicly accessible domain but rather a hostname used for local development, it cannot be validated by Let's Encrypt™.", 'auto-install-free-ssl' ) . '</p>';
-		            //echo '<p>' . __("You can create a self-signed certificate for local development environments, which secures your local connections without requiring validation from a Certificate Authority (CA).", 'auto-install-free-ssl') . '</p>';
-		            //echo '<p>' . sprintf(__('%1$sNote:%2$s Browsers do not trust self-signed certificates by default, so you may need to add exceptions in your browser to avoid security warnings during local development.', 'auto-install-free-ssl'), '<strong>', '</strong>') . '</p>';
+		            echo '<p>' . __( "Let's Encrypt™ does not issue SSL certificates for localhost. Let's Encrypt™ certificates are intended for public domain names, which are accessible via the internet for the domain control validation (DCV) process. Since localhost is a local server and a hostname used for development, it is not publicly accessible and cannot be validated online using the HTTP-01 challenge (the most common method).", 'auto-install-free-ssl' ) . '</p>';
+
+		            //echo '<p>' . __( "Let's Encrypt™ does not issue SSL certificates for localhost. Let's Encrypt™ certificates are designed for public domain names, which need to be accessible over the internet for the validation process. Since localhost is not a publicly accessible domain but rather a hostname used for local development, it cannot be validated by Let's Encrypt™.", 'auto-install-free-ssl' ) . '</p>';
 
 		            echo '<div class="aifs-ip-address-inner">';
-		            echo "After you complete developing the website in this local development environment, please do the following to secure your website:<br />";
+		            echo "<u>After you complete developing the website</u> in the local development environment, please do the following to secure your website with a free SSL certificate:<br />";
 		            echo "<ol>";
-		            echo "<li>Use an existing web hosting server or purchase one, which should be publicly accessible online.</li>";
-		            echo "<li>Use an existing domain name or purchase a domain name.</li>";
-		            echo "<li>Associate the domain name with the IP address or nameservers of the web hosting server, i.e., set A record or NS records.</li>";
-		            echo "<li>Migrate the website from this local development environment to the web hosting server using a Migration and Backup Plugin like 'Duplicator'.</li>";
-		            echo "<li>If necessary, replace '" . $domain . "' with the domain name from all database tables using a plugin like 'Better Search Replace'.</li>";
-		            echo "</ol>";
-		            echo "<br /><strong>After you complete the above steps, please try generating an SSL certificate with this plugin.</strong>";
+		            echo "<li>Use an existing web hosting server or hire a new one that is publicly accessible, i.e., available online.</li>";
+		            echo "<li>Use an existing domain name or purchase a new domain name.</li>";
+		            echo "<li>Associate the domain name with the IP address or nameservers of the online web hosting server, i.e., set A records or NS records.</li>";
+		            echo "<li>Migrate the website from your local development environment to the online web hosting server using a Migration and Backup Plugin, like 'Duplicator'.</li>";
+	                if($this->factory->is_ip_address( $domain )){
+		                echo "<li>Replace this IP address (" . $domain . ") with the domain name from all database tables using a plugin like 'Better Search Replace'.</li>";
+	                }
+	                else {
+		                echo "<li>If the domain name mentioned in steps 2 and 3 is different from '" . $domain . "', replace '" . $domain . "' with that new domain name across all database tables using a plugin like 'Better Search Replace'.</li>";
+		                //echo "<li>If necessary, replace '" . $domain . "' with the domain name from all database tables using a plugin like 'Better Search Replace'.</li>";
+	                }
+	                echo "</ol>";
+		            echo "<span style='font-size: large; line-height: 1.5em; font-weight: bold;'>Rest assured, after you complete the above steps, you can easily generate an SSL certificate with this plugin, i.e., 'Auto-Install Free SSL'.</span>";
+		            echo " We've made the process as straightforward as possible for your peace of mind.";
 		            echo '</div>';
+
+		            echo "<p style='background-color: lightyellow; padding: 1%; text-align: justify;'>However, if you use a registered domain name (for this WordPress website), mapped to the localhost IP address (" . $server_ip . "), and use the DNS-01 challenge for the domain control validation (DCV), our plugin will create a free SSL certificate for your registered domain name. Then you can download the SSL certificate files from this page and manually install them on the local server. In that case, we recommend you map the registered domain name to the localhost IP address (" . $server_ip . ") using your local computer's host file, but don't set A records pointing to the localhost IP with your domain registrar. Use your domain registrar only to set TXT records for the DNS-01 challenge.
+                        <br />Please read this for more information: <a href='https://letsencrypt.org/docs/certificates-for-localhost' target='_blank'>Certificates for localhost</a></p>";
+
 		            echo '</div>';
 	            } else if ( $this->factory->is_ip_address( $domain ) ) {
+	                $disable_button = true;
+
 		            echo '<div class="aifs-ip-address">';
 		            /* translators: %s: an IP address, e.g., 127.0.0.1 */
-		            echo '<strong>' . sprintf( __( "Your WordPress website is hosted directly on the IP address: %s", 'auto-install-free-ssl' ), $domain ) . '</strong>';
+		            echo '<strong>Oops!!<br /><br />' . sprintf( __( "Your WordPress website is hosted directly on the IP address: %s", 'auto-install-free-ssl' ), $domain ) . '</strong>';
 		            /* translators: "Let's Encrypt™" is a nonprofit SSL certificate authority. */
 		            echo '<p>' . __( "Let's Encrypt™ issues SSL certificates for domain names rather than bare IP addresses. Free SSL certificates are designed to secure domain names, providing encrypted connections between users and websites. Using SSL certificates with domain names is considered the industry's best practice.", 'auto-install-free-ssl' ) . '</p>';
 		            //echo '<p>' . __("If you're looking to secure a website, it's recommended to associate a domain name with the IP address rather than using the bare IP address. This enhances the user experience and aligns with security and usability standards.", 'auto-install-free-ssl') . '</p>';
 
 		            echo '<div class="aifs-ip-address-inner">';
-		            echo "Please do the following first to secure your website:<br />";
+		            echo "Please do the following first to secure your website with a free SSL certificate:<br />";
 		            echo "<ol>";
-		            echo "<li>Use an existing domain name or purchase a domain name.</li>";
-		            echo "<li>Associate the domain name with this IP address, i.e., set A record.</li>";
+		            echo "<li>Use an existing domain name or purchase a new domain name.</li>";
+		            echo "<li>Associate the domain name with this IP address (" . $domain . "), i.e., set A record.</li>";
 		            echo "<li>Then open <a href='" . admin_url( 'options-general.php' ) . "' target='_blank'>General Settings</a>, update 'WordPress Address (URL)', & 'Site Address (URL)' with the domain name, and click the 'Save Changes' button.</li>";
 		            echo "<li>Replace this IP address (" . $domain . ") with the domain name from all database tables using a plugin like 'Better Search Replace'.</li>";
 		            echo "</ol>";
-		            echo "<br /><strong>After you complete the above steps, please try generating an SSL certificate with this plugin.</strong>";
-		            echo '</div>';
+		            //echo "<br /><strong style='font-size: large;'>After you complete the above steps, please try generating an SSL certificate with this plugin.</strong>";
+	                echo "<span style='font-size: large; line-height: 1.5em; font-weight: bold;'>Rest assured, after you complete the above steps, you can easily generate an SSL certificate with this plugin, i.e., 'Auto-Install Free SSL'.</span>";
+	                echo " We've made the process as straightforward as possible for your peace of mind.";
+                    echo '</div>';
 		            echo '</div>';
 	            }
             }
@@ -260,7 +293,7 @@ class GenerateSSLmanually
 	                    do_settings_sections( 'aifs_generate_ssl_manually_admin' );
 
 	                    $confirmation_text = __( "Are you ready to start?", 'auto-install-free-ssl' );
-	                    submit_button( $this->save_button_text . "&nbsp;&nbsp;&nbsp;&nbsp;>>", 'button-primary button-hero', 'submit', false , 'onclick="return aifs_confirm_initiate(\''. $confirmation_text .'\')"');
+	                    submit_button( $this->save_button_text . "&nbsp;&nbsp;&nbsp;&nbsp;>>", 'button-primary button-hero', 'submit', false , 'onclick="return aifs_confirm_initiate(\''. $confirmation_text .'\')"' .($disable_button ? " disabled" : ""));
 
 	                    //echo '<a href="' . menu_page_url( 'auto_install_free_ssl', false ) . '" id="aifs-cancel" class="page-title-action button">' . __( "Cancel", 'auto-install-free-ssl' ) . '</a>';
 
@@ -277,7 +310,7 @@ class GenerateSSLmanually
                     {
 	                    $aifs_current_step_number = 2;
 	                    //Call Step 2
-	                    $this->generate_ssl_step_2();
+	                    $this->generate_ssl_step_2( $disable_button );
                     }
 
                     ?>
@@ -926,7 +959,7 @@ class GenerateSSLmanually
 	}
 
 
-	public function generate_ssl_step_2() {
+	public function generate_ssl_step_2( $disable_button = false ) {
 
 		/*echo "<pre>";
 		print_r($this->return_array_step1);
@@ -1056,7 +1089,7 @@ class GenerateSSLmanually
 
             <p><br /><em><?= __( "Is everything okay? Now click the button below.", 'auto-install-free-ssl' ) ?></em></p>
 
-        <?php echo $this->verify_domain_form(); ?>
+        <?php echo $this->verify_domain_form( "http-01", $disable_button ); ?>
         </td>
 
             <td class="" style="width: 2%;"></td>
@@ -1098,7 +1131,7 @@ class GenerateSSLmanually
 		        echo "</pre><br /><br />";
 	        }*/
 
-	        echo $this->verify_domain_form("dns-01");
+	        echo $this->verify_domain_form("dns-01", $disable_button);
         //}
 
         ?>
@@ -1116,7 +1149,7 @@ class GenerateSSLmanually
 	}
 
 
-	public function verify_domain_form($challenge_type = "http-01"){
+	public function verify_domain_form($challenge_type = "http-01", $disable_button = false){
 		$html = '<form method="post" action="'.admin_url('admin.php?page=aifs_generate_ssl_manually').'">	
         			 <input type="hidden" name="aifs_challenge_type" value="'.$challenge_type.'" />'.
 		        wp_nonce_field('aifsverifydomain', 'aifs_verify_domain', false, false);
@@ -1129,7 +1162,7 @@ class GenerateSSLmanually
 		$button_text = sprintf( __( "Verify Domain (%s) & Generate Free SSL", 'auto-install-free-ssl' ), strtoupper($challenge_type));
         $css_class = "button button-primary button-hero";
 
-		$html .=	 '<button type="submit" name="aifs_submit" class="'.$css_class.'" onclick="return aifs_confirm(\''. $confirmation_text .'\')">'. $button_text .'</button>
+		$html .=	 '<button type="submit" name="aifs_submit" class="'.$css_class.'" onclick="return aifs_confirm(\''. $confirmation_text .'\')" ' . ($disable_button ? "disabled" : "") . '>'. $button_text .'</button>
       			</form>';
 
 		return $html;

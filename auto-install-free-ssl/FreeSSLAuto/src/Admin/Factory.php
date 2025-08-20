@@ -1318,31 +1318,36 @@ class Factory {
 
     /**
      * Check if the provided string is a localhost
-     * @param $domain
-     *
+     * @param string $ip_or_domain
+     * improved since 4.6.0
      * @return bool
      * @since 4.1.0
      */
-    public function is_localhost( $domain ) {
-        $domain = trim( $domain );
-        // Trim any whitespace from the input
-        $localhost = [
-            'localhost',
-            '127.0.0.1',
-            '::1',
-            '0000:0000:0000:0000:0000:0000:0000:0001',
-            '0:0:0:0:0:0:0:1'
-        ];
-        if ( in_array( $domain, $localhost ) ) {
-            return true;
-        }
-        if ( filter_var( $domain, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) ) {
-            // Check if the IP address starts with '127.'
-            if ( strpos( $domain, '127.' ) !== false && strpos( $domain, '127.' ) === 0 ) {
+    public function is_localhost( $ip_or_domain ) {
+        if ( filter_var( $ip_or_domain, FILTER_VALIDATE_IP ) ) {
+            return aifs_is_loopback( $ip_or_domain );
+        } else {
+            // Trim the input and make it lowercase for case-insensitive checks
+            $ip_or_domain = strtolower( trim( $ip_or_domain ) );
+            // Check if it's the bare 'localhost' domain
+            if ( $ip_or_domain === 'localhost' ) {
                 return true;
             }
+            // List of reserved TLDs for local/testing use (per RFC 2606 and RFC 6761)
+            $reservedTlds = [
+                '.localhost',
+                '.test',
+                '.example',
+                '.invalid',
+                '.local'
+            ];
+            // Check if it ends with a reserved TLD
+            foreach ( $reservedTlds as $tld ) {
+                if ( substr( $ip_or_domain, -strlen( $tld ) ) === $tld ) {
+                    return true;
+                }
+            }
         }
-        // try to connect online -> but it won't work. Even localhost IP can be connected.
         return false;
     }
 

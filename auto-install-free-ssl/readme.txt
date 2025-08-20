@@ -4,8 +4,8 @@ License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 Tags: free ssl, ssl certificate, https redirect, free ssl certificate, ssl security
 Requires at least: 4.1
-Tested up to: 6.7
-Stable tag: 4.5.1
+Tested up to: 6.8
+Stable tag: 4.6.0
 Requires PHP: 5.6
 
 Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADLOCK in the browser, get automatic Renewal Reminders from plugin.
@@ -15,7 +15,7 @@ Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADL
 
 ### Auto-Install Free SSL
 
-**With over [350 five-star reviews ⭐⭐⭐⭐⭐](https://wordpress.org/support/plugin/auto-install-free-ssl/reviews/?filter=5), 'Auto Install Free SSL' is the FIRST WordPress Plugin that helps you effortlessly generate Free SSL Certificates in your WordPress dashboard.**
+**With over [380 five-star reviews ⭐⭐⭐⭐⭐](https://wordpress.org/support/plugin/auto-install-free-ssl/reviews/?filter=5) and a 4.9 out of 5 stars average rating, 'Auto-Install Free SSL' is the FIRST WordPress Plugin that empowers you to generate Free SSL Certificates in your WordPress dashboard effortlessly.** This unique feature, a game-changer for website security, puts the power in your hands and saves your money.
 
 Let's Encrypt™ SSL Certificate is FREE. But they provide it through their API. If you are not a programmer, you need to study and practice programming for years to be able to use the API of Let's Encrypt™ to generate a single Free SSL Certificate for your WordPress website.
 
@@ -24,7 +24,7 @@ Here is where 'Auto-Install Free SSL' comes into play. This WordPress plugin pro
 https://vimeo.com/745390051
 
 
-`    463,000+ DOWNLOADS!!`
+`    482,000+ DOWNLOADS!!`
 
 
 ### Minimum System Requirements
@@ -357,6 +357,70 @@ Let's Encrypt™ issues SSL certificates for domain names rather than bare IP ad
 
 If you're looking to secure a website, it's recommended to associate a domain name with the IP address rather than using the bare IP address. This enhances the user experience and aligns with security and usability standards.
 
+= Does this plugin issue free SSL certificates for localhost? =
+
+Let's Encrypt™ does not issue SSL certificates for localhost. Let's Encrypt™ certificates are intended for public domain names, which are accessible via the internet for the domain control validation (DCV) process. Since localhost is a local server and a hostname used for development, it is not publicly accessible and cannot be validated online using the HTTP-01 challenge (the most common method).
+
+After you complete developing the website in the local development environment, please do the following to secure your website with a free SSL certificate:
+
+1. Use an existing web hosting server or hire a new one that is publicly accessible, i.e., available online.
+1. Use an existing domain name or purchase a new domain name.
+1. Associate the domain name with the IP address or nameservers of the online web hosting server, i.e., set A records or NS records.
+1. Migrate the website from your local development environment to the online web hosting server using a Migration and Backup Plugin, like 'Duplicator'.
+1. If the domain name mentioned in steps 2 and 3 is different from your local hostname, replace it with the new domain name across all database tables using a plugin like 'Better Search Replace'.
+
+&nbsp;
+Rest assured, after you complete the above steps, you can easily generate an SSL certificate with this plugin, i.e., 'Auto-Install Free SSL'. We've made the process as straightforward as possible for your peace of mind.
+
+However, if you use a registered domain name (for your WordPress website), mapped to the localhost IP address (e.g., 127.0.0.1), and use the DNS-01 challenge for the domain control validation (DCV), our plugin will create a free SSL certificate for your registered domain name. Then you can download the SSL certificate files from our plugin's 'Generate SSL' page and manually install them on the local server. In that case, we recommend you map the registered domain name to the localhost IP address (e.g., 127.0.0.1) using your local computer's host file, but don't set A records pointing to the localhost IP with your domain registrar. Use your domain registrar only to set TXT records for the DNS-01 challenge. Please read this for more information: https://letsencrypt.org/docs/certificates-for-localhost
+
+= Will this plugin create free SSL certificates for a registered domain name mapped to a localhost IP address (e.g., 127.0.0.1)? =
+
+It is possible only if you can use the DNS-01 challenge for the domain control validation (DCV).
+
+However, using the HTTP-01 challenge (the most common method), it is not possible. If you map a registered domain name to a localhost IP address, it is still a localhost and can't be accessed online. This means that the domain name is only accessible from your local computer and cannot be used to get a free SSL certificate from Let's Encrypt™ using the HTTP-01 challenge. For more details, please refer to the previous FAQ.
+
+= Why does this plugin need my web server to serve static files? =
+
+Let's Encrypt™ issues free SSL certificates only after successful domain control validation (DCV).
+
+Let's Encrypt™ HTTP-01 challenge works by creating a specific text file with specific content in a specified directory (.well-known/acme-challenge/) of the document root of the website, as defined by the ACME standard. The file name and its content are variable. Our plugin creates this file with the specific text by automatically communicating with the Let's Encrypt™ API server, and as per their requirements. Users of the free version can download the static file and upload it to the specified directory. The premium plugin uploads this file to the specified directory automatically.
+
+It's the responsibility of your web server to make the static file available at the specific public URL. This is the standard behavior of every web server. To validate your domain control, Let's Encrypt™ API server accesses the specific URL and checks if the file's content is valid. For example, the file at the following URL:
+
+`http://yourdomain.com/.well-known/acme-challenge/pqv-gjW9kF0VjktRxdqpPNK-0tLA_n5ORCzuB71-Zog`
+
+&nbsp;
+Must return this exact content or text:
+
+`pqv-gjW9kF0VjktRxdqpPNK-0tLA_n5ORCzuB71-Zog.aSOSwUGmotjVbnE_hY1u-2wwHhwyl5qtPLVr4COOSQs`
+
+&nbsp;
+If your web server (or hosting provider) purposefully blocks access to such files, Let's Encrypt™ cannot validate that you control the domain, and will not issue an SSL certificate for your domain name.
+
+= How can I make sure that my web server can serve static files? =
+
+Please contact your web hosting provider and ask whether they allow Let's Encrypt™ API access to HTTP-01 challenge files.
+
+**Optionally, follow these steps:** create two directories (i.e., folders) *'.well-known/acme-challenge/'* in the document root of your domain name or website. Create a static file with the following file name:
+
+`pqv-gjW9kF0VjktRxdqpPNK-0tLA_n5ORCzuB71-Zog`
+
+&nbsp;
+and without any file extension inside the *'.well-known/acme-challenge/'* folder. Copy the following content into the file and save it:
+
+`pqv-gjW9kF0VjktRxdqpPNK-0tLA_n5ORCzuB71-Zog.aSOSwUGmotjVbnE_hY1u-2wwHhwyl5qtPLVr4COOSQs`
+
+&nbsp;
+Then try to access it over HTTP like the following URL:
+
+`http://yourdomain.com/.well-known/acme-challenge/pqv-gjW9kF0VjktRxdqpPNK-0tLA_n5ORCzuB71-Zog`
+
+&nbsp;
+(Make sure to replace 'yourdomain.com' with your actual domain name.) If you can see the exact file content in your browser, your server is ready.
+
+However, some hosts allow you to view the file manually in a browser but block Let's Encrypt™ API from accessing it, which also causes failures. So, the best way is to ask your web hosting provider.
+
 = [Pro] Why do you need my cPanel password (or API Token) when other Let's Encrypt clients don't? =
 
 All other Let's Encrypt clients who auto-install free SSL certificates need root access, a higher privilege than the cPanel user. In shared hosting, the root access belongs to the web hosting company. So those clients will not work on shared hosting.
@@ -395,6 +459,15 @@ If you have an unlimited site license and created a cron job manually, ensure yo
 
 
 == Changelog ==
+
+= 4.6.0 =
+* Enhanced Error Logging: Enhanced error logging for domain control validation failures using HTTP-01 challenge, now including the challenge URI content for improved debugging and diagnostics.
+* Optimized Server IP Detection: Optimized the aifs_ip_of_this_server() function to accurately detect the server's IP address, ensuring reliable results even when SERVER_ADDR returns false positives.
+* Improved Localhost Detection: Improved the is_localhost() function in AutoInstallFreeSSL\FreeSSLAuto\Admin\Factory to accurately determine if the website is hosted on a localhost environment.
+* Improved Help Text: Updated help text of the 'Generate SSL' page to provide clearer guidance for WordPress installations on localhost and bare IP addresses, enhancing user experience.
+* Enhanced UI Functionality: Modified the 'Generate SSL' page to disable the 'Next Step' button when WordPress is installed on a bare IP address, preventing invalid actions.
+* Updated the Freemius WordPress SDK to version 2.12.1.
+
 = 4.5.1 =
 * Updated the Freemius WordPress SDK to the latest version.
 

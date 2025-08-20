@@ -295,11 +295,17 @@ class AcmeV2 {
     public function verifyDomainOwnershipHttp01Internal( $domain, $value ) {
         $challenge = $value['challenge'];
         json_encode( $challenge );
+        $this->logger->log( "Verifying domain ownership of {$domain}" );
+        //@since 4.6.0
         $payload = $value['http-01']['payload'];
         $uri = "http://" . $domain . "/.well-known/acme-challenge/" . $challenge['token'];
         $web_root_dir = $this->get_web_root_dir( $domain );
         if ( !$this->factory->verify_internally_http_wp( $payload, $uri ) ) {
-            $this->logger->log( __( "1st Internal Validation:", 'auto-install-free-ssl' ) . " " . __( "Payload content does not match the challenge URI's content.", 'auto-install-free-ssl' ) );
+            //@todo 20 April 2025: make the next line like this to provide imp debug information:   $this->logger->log( sprintf(__('Final Internal Validation: the Payload content (%1$s) successfully matched the content of %2$s.', 'auto-install-free-ssl'), $payload, $uri));
+            //$this->logger->log( __( "1st Internal Validation:", 'auto-install-free-ssl' ) . " " . __( "Payload content does not match the challenge URI's content.", 'auto-install-free-ssl' ) );
+            //@since 4.6.0, to provide important debug information
+            /* translators: %1$s: A data, i.e., string of characters; %2$s: A URL, e.g., http://example.com/.well-known/acme-challenge/egIiS7rwd */
+            $this->logger->log_v2( 'error', __( "1st Internal Validation:", 'auto-install-free-ssl' ) . " " . sprintf( __( 'Payload content (%1$s) does not match the content of the challenge URI %2$s.', 'auto-install-free-ssl' ), $payload, $uri ) );
             //Create htaccess rules in .well-known directory to fix the issue
             if ( $this->factory->fix_htaccess_challenge_dir( $web_root_dir . AIFS_DS . '.well-known' ) ) {
                 $this->logger->log( __( ".htaccess rules have been created successfully in the '.well-known' directory.", 'auto-install-free-ssl' ) );
@@ -307,7 +313,10 @@ class AcmeV2 {
                 $this->logger->log( __( "Oops! There was an error creating .htaccess rules in the '.well-known' directory.", 'auto-install-free-ssl' ) );
             }
             if ( !$this->factory->verify_internally_http_wp( $payload, $uri ) ) {
-                $this->logger->log( __( "2nd Internal Validation:", 'auto-install-free-ssl' ) . " " . __( "Payload content does not match the challenge URI's content.", 'auto-install-free-ssl' ) );
+                //$this->logger->log( __( "2nd Internal Validation:", 'auto-install-free-ssl' ) . " " . __( "Payload content does not match the challenge URI's content.", 'auto-install-free-ssl' ) );
+                //@since 4.6.0, to provide important debug information
+                /* translators: %1$s: A data, i.e., string of characters; %2$s: A URL, e.g., http://example.com/.well-known/acme-challenge/egIiS7rwd */
+                $this->logger->log_v2( 'error', __( "2nd Internal Validation:", 'auto-install-free-ssl' ) . " " . sprintf( __( 'Payload content (%1$s) does not match the content of the challenge URI %2$s.', 'auto-install-free-ssl' ), $payload, $uri ) );
                 if ( !aifs_is_free_version() ) {
                     if ( $this->saveAuthenticationTokenHttp01Alternative__premium_only( $domain, $value ) ) {
                         return true;
