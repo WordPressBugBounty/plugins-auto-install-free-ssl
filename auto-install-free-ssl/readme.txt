@@ -1,11 +1,11 @@
-=== Free SSL Certificate WordPress Plugin, HTTPS Redirect, Renewal Reminder – Auto-Install Free SSL ===
+=== Auto-Install Free SSL – Generate & Install Free SSL Certificates ===
 Contributors: speedify, freessl, freemius
 License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 Tags: free ssl, ssl certificate, https redirect, free ssl certificate, ssl security
 Requires at least: 4.1
-Tested up to: 6.8
-Stable tag: 4.6.0
+Tested up to: 6.9
+Stable tag: 4.6.1
 Requires PHP: 5.6
 
 Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADLOCK in the browser, get automatic Renewal Reminders from plugin.
@@ -15,16 +15,13 @@ Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADL
 
 ### Auto-Install Free SSL
 
-**With over [380 five-star reviews ⭐⭐⭐⭐⭐](https://wordpress.org/support/plugin/auto-install-free-ssl/reviews/?filter=5) and a 4.9 out of 5 stars average rating, 'Auto-Install Free SSL' is the FIRST WordPress Plugin that empowers you to generate Free SSL Certificates in your WordPress dashboard effortlessly.** This unique feature, a game-changer for website security, puts the power in your hands and saves your money.
+**With over [380 five-star reviews ⭐⭐⭐⭐⭐](https://wordpress.org/support/plugin/auto-install-free-ssl/reviews/?filter=5) and a 4.9 out of 5 stars average rating, 'Auto-Install Free SSL' empowers you to generate Free SSL Certificates in your WordPress dashboard effortlessly.** This feature helps secure your website and saves you money.
 
 Let's Encrypt™ SSL Certificate is FREE. But they provide it through their API. If you are not a programmer, you need to study and practice programming for years to be able to use the API of Let's Encrypt™ to generate a single Free SSL Certificate for your WordPress website.
 
 Here is where 'Auto-Install Free SSL' comes into play. This WordPress plugin provides a hassle-free way to obtain and install the Let's Encrypt™ free SSL certificate for your website. You don't need programming or coding experience to set it up. With this plugin, you don't need to spend hours configuring SSL or waste money purchasing SSL certificates. All you need is a few minutes.
 
 https://vimeo.com/745390051
-
-
-`    482,000+ DOWNLOADS!!`
 
 
 ### Minimum System Requirements
@@ -41,6 +38,7 @@ https://vimeo.com/745390051
 
 ### FREE PLUGIN FEATURES
 
+* Domain Ownership Verification.
 * Generate and renew Free SSL Certificate.
 * One-click Download the generated SSL certificate, Private key, and CA Bundle files.
 * Video tutorial on cPanel: (1) How to upload HTTP-01 challenge files to verify domain ownership. (2) How to Install the Free SSL Certificate.
@@ -48,6 +46,8 @@ https://vimeo.com/745390051
 * One-click Force SSL activation, i.e., HTTPS redirect, fix insecure links and mixed content warning, display the padlock in the browser's address bar with ONLY ONE CLICK.
 * One-click revert to HTTP if required.
 * Automatic renewal reminder by email and admin notice before the SSL expiry date.
+* Automatic account registration with Let's Encrypt™.
+* Automatic CSR (Certificate Signing Request) generation.
 
 The free https SSL certificate issued by Let's Encrypt™ expires in 90 days. They recommend renewing 30 days before expiry. Please check the FAQ section to learn why the lifetime is 90 days.
 
@@ -64,6 +64,8 @@ If your WordPress website has an SSL certificate installed and you are looking O
 * **Automatic Installation** of Free SSL Security Certificate (cPanel or root access is required for this automation). [However, if you have neither cPanel nor root access, we'll Install the SSL manually for the first time and provide documentation on how to install SSL manually].
 * **Automatic Renewal** of Free SSL Certificate (30 days before expiry).
 * **Automatic Cron Job.** No need to set the Cron Job manually.
+* Automatic account registration with Let's Encrypt™.
+* Automatic CSR (Certificate Signing Request) generation.
 * One-click Force SSL activation.
 * One-click revert to HTTP if required.
 * One-to-one Premium Support.
@@ -459,6 +461,11 @@ If you have an unlimited site license and created a cron job manually, ensure yo
 
 
 == Changelog ==
+
+= 4.6.1 =
+* Fixed one line of code that requires PHP 7.0 or later. But this plugin supports PHP 5.6
+* Updated the Freemius WordPress SDK to version 2.13.0.
+* Updated readme.txt
 
 = 4.6.0 =
 * Enhanced Error Logging: Enhanced error logging for domain control validation failures using HTTP-01 challenge, now including the challenge URI content for improved debugging and diagnostics.

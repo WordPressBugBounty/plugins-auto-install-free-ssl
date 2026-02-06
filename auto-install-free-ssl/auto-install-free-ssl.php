@@ -6,7 +6,7 @@
  * Plugin Name: Auto-Install Free SSL
  * Plugin URI:  https://freessl.tech
  * Description: Generate & install Free SSL Certificates, activate force HTTPS redirect with one click to fix insecure links & mixed content warnings, and get automatic Renewal Reminders.
- * Version:     4.6.0
+ * Version:     4.6.1
  * Requires at least: 4.1
  * Requires PHP:      5.6
  * Author:      Free SSL Dot Tech
@@ -546,7 +546,9 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
                 }
             }
             // Step 4: Fallback to SERVER_ADDR (loopback for localhost)
-            return $_SERVER['SERVER_ADDR'] ?? '127.0.0.1';
+            //return $_SERVER['SERVER_ADDR'] ?? '127.0.0.1';  // requires PHP 7.0 or later. But this plugin supports PHP 5.6
+            return ( isset( $_SERVER['SERVER_ADDR'] ) ? $_SERVER['SERVER_ADDR'] : '127.0.0.1' );
+            //updated since 4.6.1
         }
     }
 
@@ -1011,4 +1013,16 @@ if ( is_admin() ) {
     /** Log page */
     //new Log();
     Log::getInstance();
+    /**
+     * Filter to Customize Freemius Checkout Parameters
+     * @since 4.6.1
+     */
+    aifssl_fs()->add_filter( 'checkout/parameters', function () {
+        return array(
+            'show_refund_badge'      => true,
+            'refund_policy_position' => 'below_form',
+            'show_reviews'           => true,
+            'billing_cycle_selector' => 'dropdown',
+        );
+    } );
 }
