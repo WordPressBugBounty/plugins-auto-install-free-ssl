@@ -4,8 +4,8 @@ License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 Tags: free ssl, ssl certificate, https redirect, free ssl certificate, ssl security
 Requires at least: 4.1
-Tested up to: 6.9
-Stable tag: 4.6.1
+Tested up to: 7.0
+Stable tag: 4.6.2
 Requires PHP: 5.6
 
 Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADLOCK in the browser, get automatic Renewal Reminders from plugin.
@@ -15,7 +15,7 @@ Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADL
 
 ### Auto-Install Free SSL
 
-**With over [380 five-star reviews ⭐⭐⭐⭐⭐](https://wordpress.org/support/plugin/auto-install-free-ssl/reviews/?filter=5) and a 4.9 out of 5 stars average rating, 'Auto-Install Free SSL' empowers you to generate Free SSL Certificates in your WordPress dashboard effortlessly.** This feature helps secure your website and saves you money.
+**With over [380 five-star reviews ⭐⭐⭐⭐⭐](https://wordpress.org/support/plugin/auto-install-free-ssl/reviews/?filter=5) and a 4.9 out of 5 stars average rating, 'Auto-Install Free SSL' empowers you to generate Free SSL Certificates in your WordPress dashboard effortlessly.** This plugin helps secure your website and saves you money.
 
 Let's Encrypt™ SSL Certificate is FREE. But they provide it through their API. If you are not a programmer, you need to study and practice programming for years to be able to use the API of Let's Encrypt™ to generate a single Free SSL Certificate for your WordPress website.
 
@@ -461,6 +461,14 @@ If you have an unlimited site license and created a cron job manually, ensure yo
 
 
 == Changelog ==
+
+= 4.6.2 =
+* Fixed WordPress 6.7+ translation loading notices by delaying plugin textdomain usage until the init hook.
+* Delayed admin class initialization to prevent translation functions from running too early.
+* [Pro] Reused the plugin environment check handler in cron.php and removed early translated requirement messages.
+* Replaced direct-access translated die() messages with plain text to avoid early translation loading.
+* Updated the Freemius WordPress SDK to version 2.13.1.
+* Updated readme.txt
 
 = 4.6.1 =
 * Fixed one line of code that requires PHP 7.0 or later. But this plugin supports PHP 5.6

@@ -58,7 +58,7 @@ class ForceSSL {
     // Private constructor to prevent multiple instantiations @since 4.5.0
     private function __construct() {
         if ( !defined( 'ABSPATH' ) ) {
-            die( __( "Access denied", 'auto-install-free-ssl' ) );
+            die( "Access denied" );
         }
         //Following function should be called for any value of aifs_force_ssl, so that revert to HTTP possible from admin dashboard
         add_action( 'admin_init', array($this, 'aifs_force_ssl_controller') );
@@ -350,7 +350,7 @@ class ForceSSL {
          */
         if ( isset( $_POST['aifs-activate-force-ssl'] ) ) {
             if ( !wp_verify_nonce( $_POST['aifs-activate-force-ssl'], 'aifsforcessl' ) ) {
-                wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
+                wp_die( "Access denied" );
             } else {
                 /* Check if a valid SSL installed on this website - START */
                 if ( isset( $_POST['aifs_force_ssl'] ) && absint( $_POST['aifs_force_ssl'] ) == 1 ) {

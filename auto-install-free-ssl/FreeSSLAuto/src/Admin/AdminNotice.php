@@ -51,7 +51,7 @@ class AdminNotice {
      */
     private function __construct() {
         if ( !defined( 'ABSPATH' ) ) {
-            die( __( "Access denied", 'auto-install-free-ssl' ) );
+            die( "Access denied" );
         }
         // Set class property
         $this->options = ( get_option( 'basic_settings_auto_install_free_ssl' ) ? get_option( 'basic_settings_auto_install_free_ssl' ) : add_option( 'basic_settings_auto_install_free_ssl' ) );

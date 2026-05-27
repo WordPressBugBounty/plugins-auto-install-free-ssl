@@ -39,7 +39,7 @@ class Client implements ClientInterface {
 
     public function __construct( $base ) {
         if ( !defined( 'ABSPATH' ) ) {
-            die( __( "Access denied", 'auto-install-free-ssl' ) );
+            die( "Access denied" );
         }
         $this->base = $base;
         $this->logger = new Logger();

@@ -6,7 +6,7 @@
  * Plugin Name: Auto-Install Free SSL
  * Plugin URI:  https://freessl.tech
  * Description: Generate & install Free SSL Certificates, activate force HTTPS redirect with one click to fix insecure links & mixed content warnings, and get automatic Renewal Reminders.
- * Version:     4.6.1
+ * Version:     4.6.2
  * Requires at least: 4.1
  * Requires PHP:      5.6
  * Author:      Free SSL Dot Tech
@@ -44,13 +44,8 @@ if ( !defined( 'ABSPATH' ) ) {
     die( "Access denied" );
 }
 use AutoInstallFreeSSL\FreeSSLAuto\Acme\Factory as AcmeFactory;
-use AutoInstallFreeSSL\FreeSSLAuto\Admin\ForceSSL;
 use AutoInstallFreeSSL\FreeSSLAuto\Admin\HomeOptions;
-use AutoInstallFreeSSL\FreeSSLAuto\Admin\AdminNotice;
-use AutoInstallFreeSSL\FreeSSLAuto\Admin\GenerateSSLmanually;
 use AutoInstallFreeSSL\FreeSSLAuto\Admin\Factory;
-use AutoInstallFreeSSL\FreeSSLAuto\Admin\ForceHttpsPage;
-use AutoInstallFreeSSL\FreeSSLAuto\Admin\Log;
 use AutoInstallFreeSSL\FreeSSLAuto\Email;
 use AutoInstallFreeSSL\FreeSSLAuto\Acme\Client;
 if ( function_exists( 'aifssl_fs' ) ) {
@@ -82,6 +77,7 @@ if ( function_exists( 'aifssl_fs' ) ) {
                         'premium_version_basename' => 'auto-install-free-ssl-premium/auto-install-free-ssl.php',
                     ),
                     'is_live'             => true,
+                    'is_org_compliant'    => true,
                 ) );
             }
             return $aifssl_fs;
@@ -94,30 +90,13 @@ if ( function_exists( 'aifssl_fs' ) ) {
     }
     /* END Freemius*/
     //}
-    $log_msg = "";
-    if ( !defined( 'PHP_VERSION_ID' ) || PHP_VERSION_ID < 50400 ) {
-        $log_msg .= __( "You need at least PHP 5.4.0", 'auto-install-free-ssl' ) . "<br />";
-    }
-    if ( !extension_loaded( 'openssl' ) ) {
-        $log_msg .= __( "You need OpenSSL extension enabled with PHP", 'auto-install-free-ssl' ) . "<br />";
-    }
-    if ( !extension_loaded( 'curl' ) ) {
-        $log_msg .= __( "You need Curl extension enabled with PHP", 'auto-install-free-ssl' ) . "<br />";
-    }
-    if ( !ini_get( 'allow_url_fopen' ) ) {
-        $log_msg .= __( "You need to set PHP directive allow_url_fopen = On. Please contact your web hosting company for help.", 'auto-install-free-ssl' ) . "<br />";
-    }
-    if ( strlen( $log_msg ) > 10 ) {
-        $log_msg .= '<br />Please <a href="' . admin_url( 'plugins.php' ) . '">click here</a> to return to the plugins page.';
-        wp_die( $log_msg );
-    }
     // Define Directory Separator to make the default DIRECTORY_SEPARATOR short
     if ( !defined( 'AIFS_DS' ) ) {
         //formerly 'DS'; renamed @since 4.5.0
         define( 'AIFS_DS', DIRECTORY_SEPARATOR );
     }
     require_once ABSPATH . 'wp-admin/includes/plugin.php';
-    $plugin_data = get_plugin_data( __FILE__, true, false );
+    $plugin_data = get_plugin_data( __FILE__, false, false );
     // @since 4.5.0 to fix the PHP notice "Function _load_textdomain_just_in_time was called incorrectly"
     define( 'AIFS_VERSION', $plugin_data['Version'] );
     define( 'AIFS_DIR', plugin_dir_path( __FILE__ ) );
@@ -153,7 +132,8 @@ if ( function_exists( 'aifssl_fs' ) ) {
      * Force SSL on frontend and backend
      */
     //new ForceSSL();
-    ForceSSL::getInstance();
+    //ForceSSL::getInstance();
+    add_action( 'init', array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\ForceSSL', 'getInstance'), 12 );
 }
 if ( !function_exists( 'aifs_home_menu' ) ) {
     /** Create the menu */
@@ -189,6 +169,54 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
     /** Implementing Translations - load textdomain */
     function aifs_load_textdomain() {
         load_plugin_textdomain( 'auto-install-free-ssl', false, basename( dirname( __FILE__ ) ) . '/languages/' );
+    }
+
+    /**
+     * Get the environment errors to check if the environment is compatible with the plugin
+     * @since 4.6.2
+     */
+    function aifs_get_environment_errors() {
+        $errors = array();
+        if ( !defined( 'PHP_VERSION_ID' ) || PHP_VERSION_ID < 50400 ) {
+            $errors[] = 'php_version';
+        }
+        if ( !extension_loaded( 'openssl' ) ) {
+            $errors[] = 'openssl';
+        }
+        if ( !extension_loaded( 'curl' ) ) {
+            $errors[] = 'curl';
+        }
+        if ( !ini_get( 'allow_url_fopen' ) ) {
+            $errors[] = 'allow_url_fopen';
+        }
+        return $errors;
+    }
+
+    /**
+     * Check if the environment is compatible with the plugin and stop the plugin if it is not
+     * @since 4.6.2
+     */
+    function aifs_maybe_stop_for_environment_errors() {
+        $errors = aifs_get_environment_errors();
+        if ( empty( $errors ) ) {
+            return;
+        }
+        $messages = array();
+        if ( in_array( 'php_version', $errors, true ) ) {
+            $messages[] = __( "You need at least PHP 5.4.0", 'auto-install-free-ssl' );
+        }
+        if ( in_array( 'openssl', $errors, true ) ) {
+            $messages[] = __( "You need OpenSSL extension enabled with PHP", 'auto-install-free-ssl' );
+        }
+        if ( in_array( 'curl', $errors, true ) ) {
+            $messages[] = __( "You need Curl extension enabled with PHP", 'auto-install-free-ssl' );
+        }
+        if ( in_array( 'allow_url_fopen', $errors, true ) ) {
+            $messages[] = __( "You need to set PHP directive allow_url_fopen = On. Please contact your web hosting company for help.", 'auto-install-free-ssl' );
+        }
+        $log_msg = implode( '<br />', $messages );
+        $log_msg .= '<br /><br />Please <a href="' . esc_url( admin_url( 'plugins.php' ) ) . '">click here</a> to return to the plugins page.';
+        wp_die( $log_msg );
     }
 
     /**
@@ -997,22 +1025,32 @@ if ( is_admin() ) {
     add_action( 'admin_menu', 'aifs_home_menu' );
     /** Implementing Translations - load textdomain */
     add_action( 'init', 'aifs_load_textdomain' );
+    add_action( 'init', 'aifs_maybe_stop_for_environment_errors', 11 );
+    // @since 4.6.2
     /** Display Admin Notice */
     //new AdminNotice();
-    AdminNotice::getInstance();
+    //AdminNotice::getInstance();
+    add_action( 'init', array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\AdminNotice', 'getInstance'), 12 );
+    // @since 4.6.2
     /** Generate SSL manually */
     //new GenerateSSLmanually();
-    GenerateSSLmanually::getInstance();
+    //GenerateSSLmanually::getInstance();
+    add_action( 'init', array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\GenerateSSLmanually', 'getInstance'), 12 );
+    // @since 4.6.2
     //Add the JS
     add_action( 'admin_enqueue_scripts', 'aifs_add_js_enqueue' );
     add_action( 'admin_enqueue_scripts', 'aifs_admin_styles' );
     add_action( 'admin_init', 'aifs_download_file_handler' );
     /** Force HTTPS page */
     //new ForceHttpsPage();
-    ForceHttpsPage::getInstance();
+    //ForceHttpsPage::getInstance();
+    add_action( 'init', array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\ForceHttpsPage', 'getInstance'), 12 );
+    // @since 4.6.2
     /** Log page */
     //new Log();
-    Log::getInstance();
+    //Log::getInstance();
+    add_action( 'init', array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\Log', 'getInstance'), 12 );
+    // @since 4.6.2
     /**
      * Filter to Customize Freemius Checkout Parameters
      * @since 4.6.1

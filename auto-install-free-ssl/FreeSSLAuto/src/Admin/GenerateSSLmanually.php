@@ -63,7 +63,7 @@ class GenerateSSLmanually
     private function __construct()
     {
 	    if (!defined('ABSPATH')) {
-		    die(__( "Access denied", 'auto-install-free-ssl' ));
+		    die( "Access denied" );
 	    }
 
         //Add bootstrap CSS
@@ -1180,7 +1180,7 @@ class GenerateSSLmanually
 
 		if ( isset( $_GET['aifschallengehttp'] ) ) {
 			if ( !wp_verify_nonce( $_GET['aifschallengehttp'], 'aifs_challenge_http' ) ) {
-				wp_die(__( "Access denied", 'auto-install-free-ssl' ));
+				wp_die( "Access denied" );
 			}
 
             $domain = $_GET['domain'];
@@ -1206,7 +1206,7 @@ class GenerateSSLmanually
 	public function generate_ssl_step_3(){
 
 		if ( isset( $_POST['aifs_challenge_type'] ) && !wp_verify_nonce($_POST['aifs_verify_domain'], 'aifsverifydomain') ) {
-			wp_die(__( "Access denied", 'auto-install-free-ssl' ));
+			wp_die( "Access denied" );
 		}
 		else {
 			$home_options = new HomeOptions();

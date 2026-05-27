@@ -39,7 +39,7 @@ class Factory {
 
     public function __construct() {
         if ( !defined( 'ABSPATH' ) ) {
-            die( __( "Access denied", 'auto-install-free-ssl' ) );
+            die( "Access denied" );
         }
         $this->logger = new Logger();
     }

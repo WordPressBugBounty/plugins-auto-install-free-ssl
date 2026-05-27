@@ -45,7 +45,7 @@ class HomeOptions {
      */
     public function __construct() {
         if ( !defined( 'ABSPATH' ) ) {
-            die( __( "Access denied", 'auto-install-free-ssl' ) );
+            die( "Access denied" );
         }
         $this->factory = new Factory();
         $this->app_settings = aifs_get_app_settings();

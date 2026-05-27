@@ -46,7 +46,7 @@ class Factory {
 
     public function __construct( $certificatesBase, $acme_version, $is_staging ) {
         if ( !defined( 'ABSPATH' ) ) {
-            die( __( "Access denied", 'auto-install-free-ssl' ) );
+            die( "Access denied" );
         }
         $this->certificatesBase = $certificatesBase;
         $this->acme_version = $acme_version;

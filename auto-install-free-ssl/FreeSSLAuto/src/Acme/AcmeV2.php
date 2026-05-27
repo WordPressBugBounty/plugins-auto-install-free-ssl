@@ -93,7 +93,7 @@ class AcmeV2 {
         $server_ip
     ) {
         if ( !defined( 'ABSPATH' ) ) {
-            die( __( "Access denied", 'auto-install-free-ssl' ) );
+            die( "Access denied" );
         }
         $this->is_staging = $is_staging;
         //choose the appropriate ACME API endpoint

@@ -44,7 +44,7 @@ class AutoDataEntry
     public function __construct($is_cpanel = false)
     {
 	    if (!defined('ABSPATH')) {
-		    die(__( "Access denied", 'auto-install-free-ssl' ));
+		    die( "Access denied" );
 	    }
         
         $this->factory =  new Factory();
