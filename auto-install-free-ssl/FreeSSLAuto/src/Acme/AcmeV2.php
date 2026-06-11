@@ -571,7 +571,7 @@ class AcmeV2 {
             $certificates = [];
             while ( 1 ) {
                 //$this->client->getLastLinks();
-                $result = $this->client->get( $location, null, true );
+                $fullchain = $this->client->get( $location, null, true );
                 $this->logger->log( __( "Location value", 'auto-install-free-ssl' ) . ": " . $location );
                 if ( 202 === $this->client->getLastCode() ) {
                     $sec = __( "1", 'auto-install-free-ssl' );
@@ -580,7 +580,9 @@ class AcmeV2 {
                     sleep( 1 );
                 } elseif ( 200 === $this->client->getLastCode() ) {
                     $this->logger->log( __( "We have got a certificate! YAY!", 'auto-install-free-ssl' ) );
-                    $certificates = explode( "\n\n", $result );
+                    //$certificates = explode( "\n\n", $result );
+                    $certificates = $this->splitFullChain( $fullchain );
+                    //@since 4.6.3
                     break;
                 } else {
                     //$this->logger->exception_sse_friendly(__( "Can't get a certificate: HTTP code", 'auto-install-free-ssl' ) . ": ". $this->client->getLastCode(), __FILE__, __LINE__);
@@ -591,21 +593,20 @@ class AcmeV2 {
                     //return false;
                 }
             }
-            if ( empty( $certificates ) ) {
+            if ( empty( $fullchain ) || empty( $certificates ) ) {
                 //$this->logger->exception_sse_friendly(__( "No certificates generated", 'auto-install-free-ssl' ), __FILE__, __LINE__);
                 $this->logger->exception_sse_friendly( "No certificates generated. Please try again.", __FILE__, __LINE__ );
                 //since 3.6.1, Don't translate exception message.
                 return false;
             } else {
                 $this->logger->log( __( "Saving Certificate (CRT) certificate.pem", 'auto-install-free-ssl' ) );
-                file_put_contents( $domainPath . AIFS_DS . 'certificate.pem', $certificates[0] );
+                file_put_contents( $domainPath . AIFS_DS . 'certificate.pem', $certificates['certificate'] );
                 $this->logger->log( __( "Saving (CABUNDLE) cabundle.pem", 'auto-install-free-ssl' ) );
                 //unset($certificates[0]);
                 //file_put_contents($domainPath.AIFS_DS.'cabundle.pem', implode( "\n\n", $certificates ));
-                file_put_contents( $domainPath . AIFS_DS . 'cabundle.pem', $certificates[1] );
-                //this method doesn't include the 3rd certificate, if any
+                file_put_contents( $domainPath . AIFS_DS . 'cabundle.pem', $certificates['cabundle'] );
                 $this->logger->log( __( "Saving fullchain.pem", 'auto-install-free-ssl' ) );
-                file_put_contents( $domainPath . AIFS_DS . 'fullchain.pem', $result );
+                file_put_contents( $domainPath . AIFS_DS . 'fullchain.pem', $fullchain );
                 /* translators: "Let's Encrypt" is a nonprofit SSL certificate authority. */
                 $this->logger->log_v2( 'SUCCESS', __( "Done!!!! Let's Encrypt™ ACME V2 SSL certificate successfully issued!!", 'auto-install-free-ssl' ), [
                     'event' => 'gist',
@@ -622,6 +623,33 @@ class AcmeV2 {
                 return true;
             }
         }
+    }
+
+    /**
+     * Split fullchain.pem into EE cert and CA bundle (intermediate + root).
+     * cPanel's installssl API requires the CA bundle to include the root.
+     *
+     * @param string $fullchain  The raw PEM content of fullchain.pem
+     * @return array ['certificate' => string, 'cabundle' => string]
+     * @since 4.6.3
+     */
+    function splitFullChain( $fullchain ) {
+        // Extract all PEM blocks
+        preg_match_all( '/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/s', $fullchain, $matches );
+        $certs = $matches[0];
+        if ( count( $certs ) < 2 ) {
+            //throw new \RuntimeException('Full chain must contain at least 2 certificates.');
+            $this->logger->exception_sse_friendly( "Full chain must contain at least 2 certificates.", __FILE__, __LINE__ );
+            return [];
+        }
+        $certificate = $certs[0];
+        // [1] End-Entity (EE) / Leaf Certificate
+        $cabundle = implode( "\n\n", array_slice( $certs, 1 ) );
+        // [2] Intermediate CA Certificate + [3] Root CA Certificate + ...
+        return [
+            'certificate' => $certificate,
+            'cabundle'    => $cabundle,
+        ];
     }
 
     /**

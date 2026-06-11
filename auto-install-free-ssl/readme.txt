@@ -5,7 +5,7 @@ License URI: http://www.gnu.org/licenses/gpl-3.0.html
 Tags: free ssl, ssl certificate, https redirect, free ssl certificate, ssl security
 Requires at least: 4.1
 Tested up to: 7.0
-Stable tag: 4.6.2
+Stable tag: 4.6.3
 Requires PHP: 5.6
 
 Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADLOCK in the browser, get automatic Renewal Reminders from plugin.
@@ -286,6 +286,16 @@ Please check the existing topics in the WordPress [support forum](https://wordpr
 
 == Frequently Asked Questions ==
 
+= SSL installation fails with "Certificate verification failed!" How can I fix the issue? =
+
+After generating an SSL certificate with this plugin, if SSL installation fails and you see such an error message: "Certificate verification failed! The system did not find the root certificate that corresponds to the supplied Certificate Authority Bundle’s intermediate certificate. Please supply a full Certificate Authority Bundle with the root certificate included."
+
+Previously, only the intermediate certificate was included in the CA bundle, which caused installation failures on hosting servers (including cPanel servers) where the root certificate was not present in the local trust store. 
+
+Version 4.6.3 and later now always includes the root certificate in the CA bundle, which resolves this error. Please update the plugin to the latest version.
+
+**This fix also ensures correct handling of Let's Encrypt's newer Generation Y chains, which can contain more than three certificates.**
+
 = How do I install the 'Auto-Install Free SSL' plugin? =
 
 Please [click here](https://freessl.tech/wordpress-letsencrypt-free-ssl-certificate-documentation/?utm_source=wp_org&utm_medium=faq&utm_campaign=aifs_free&utm_content=faq_1#plugin-installation) to learn about plugin installation.
@@ -461,6 +471,10 @@ If you have an unlimited site license and created a cron job manually, ensure yo
 
 
 == Changelog ==
+
+= 4.6.3 =
+* Fix: The CA bundle now always includes the root certificate. Previously, only the intermediate certificate was included in the CA bundle, which caused installation failures on hosting servers (including cPanel servers) where the root certificate was not present in the local trust store. This fix also ensures correct handling of Let's Encrypt's newer Generation Y chains, which can contain more than three certificates.
+* [Pro] Fix: Improved cPanel API error logging to correctly handle all response types. Previously, only the first 'errors' was included. The logger now safely handles null, arrays, and any unexpected types, and labels each section of errors, messages, and warnings for easier diagnosis.
 
 = 4.6.2 =
 * Fixed WordPress 6.7+ translation loading notices by delaying plugin textdomain usage until the init hook.
