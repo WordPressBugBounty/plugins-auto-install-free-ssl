@@ -6,7 +6,7 @@
  * Plugin Name: Auto-Install Free SSL
  * Plugin URI:  https://freessl.tech
  * Description: Generate & install Free SSL Certificates, activate force HTTPS redirect with one click to fix insecure links & mixed content warnings, and get automatic Renewal Reminders.
- * Version:     4.6.3
+ * Version:     4.7.0
  * Requires at least: 4.1
  * Requires PHP:      5.6
  * Author:      Free SSL Dot Tech
@@ -123,10 +123,8 @@ if ( function_exists( 'aifssl_fs' ) ) {
         require_once AIFS_DIR . AIFS_DS . 'vendor' . AIFS_DS . 'usrflo' . AIFS_DS . 'registered-domain-libs' . AIFS_DS . 'PHP' . AIFS_DS . 'effectiveTLDs.inc.php';
         require_once AIFS_DIR . AIFS_DS . 'vendor' . AIFS_DS . 'usrflo' . AIFS_DS . 'registered-domain-libs' . AIFS_DS . 'PHP' . AIFS_DS . 'regDomain.inc.php';
     }
-    if ( version_compare( phpversion(), '5.3.0' ) >= 0 && !class_exists( 'AutoInstallFreeSSL\\FreeSSLAuto\\FreeSSLAuto' ) ) {
-        if ( file_exists( __DIR__ . AIFS_DS . 'vendor' . AIFS_DS . 'autoload.php' ) ) {
-            require_once __DIR__ . AIFS_DS . 'vendor' . AIFS_DS . 'autoload.php';
-        }
+    if ( file_exists( AIFS_DIR . 'vendor' . AIFS_DS . 'autoload.php' ) ) {
+        require_once AIFS_DIR . 'vendor' . AIFS_DS . 'autoload.php';
     }
     /**
      * Force SSL on frontend and backend
@@ -177,17 +175,19 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
      */
     function aifs_get_environment_errors() {
         $errors = array();
-        if ( !defined( 'PHP_VERSION_ID' ) || PHP_VERSION_ID < 50400 ) {
+        if ( !defined( 'PHP_VERSION_ID' ) || PHP_VERSION_ID < 50600 ) {
             $errors[] = 'php_version';
+        }
+        global $wp_version;
+        if ( !empty( $wp_version ) && version_compare( $wp_version, '4.1', '<' ) ) {
+            // @since 4.7.0 added WordPress version check and removed allow_url_fopen check
+            $errors[] = 'wordpress_version';
         }
         if ( !extension_loaded( 'openssl' ) ) {
             $errors[] = 'openssl';
         }
         if ( !extension_loaded( 'curl' ) ) {
             $errors[] = 'curl';
-        }
-        if ( !ini_get( 'allow_url_fopen' ) ) {
-            $errors[] = 'allow_url_fopen';
         }
         return $errors;
     }
@@ -203,16 +203,17 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
         }
         $messages = array();
         if ( in_array( 'php_version', $errors, true ) ) {
-            $messages[] = __( "You need at least PHP 5.4.0", 'auto-install-free-ssl' );
+            $messages[] = __( "You need at least PHP 5.6.0", 'auto-install-free-ssl' );
+        }
+        if ( in_array( 'wordpress_version', $errors, true ) ) {
+            // @since 4.7.0 added WordPress version check error message and removed allow_url_fopen check
+            $messages[] = __( 'You need WordPress 4.1 or later', 'auto-install-free-ssl' );
         }
         if ( in_array( 'openssl', $errors, true ) ) {
             $messages[] = __( "You need OpenSSL extension enabled with PHP", 'auto-install-free-ssl' );
         }
         if ( in_array( 'curl', $errors, true ) ) {
             $messages[] = __( "You need Curl extension enabled with PHP", 'auto-install-free-ssl' );
-        }
-        if ( in_array( 'allow_url_fopen', $errors, true ) ) {
-            $messages[] = __( "You need to set PHP directive allow_url_fopen = On. Please contact your web hosting company for help.", 'auto-install-free-ssl' );
         }
         $log_msg = implode( '<br />', $messages );
         $log_msg .= '<br /><br />Please <a href="' . esc_url( admin_url( 'plugins.php' ) ) . '">click here</a> to return to the plugins page.';
@@ -677,7 +678,7 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
      */
     function aifs_display_flash_notices() {
         $notices = get_option( 'aifs_flash_notices' );
-        if ( $notices != false && count( $notices ) > 0 ) {
+        if ( $notices != false && is_array( $notices ) && count( $notices ) > 0 ) {
             // Iterate through the notices to display them, if exist in option table
             foreach ( $notices as $notice ) {
                 $style = ( $notice['type'] == "success" ? 'style="color: #46b450;"' : '' );

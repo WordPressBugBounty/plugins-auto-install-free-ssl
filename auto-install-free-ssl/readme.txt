@@ -5,7 +5,7 @@ License URI: http://www.gnu.org/licenses/gpl-3.0.html
 Tags: free ssl, ssl certificate, https redirect, free ssl certificate, ssl security
 Requires at least: 4.1
 Tested up to: 7.0
-Stable tag: 4.6.3
+Stable tag: 4.7.0
 Requires PHP: 5.6
 
 Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADLOCK in the browser, get automatic Renewal Reminders from plugin.
@@ -15,7 +15,7 @@ Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADL
 
 ### Auto-Install Free SSL
 
-**With over [380 five-star reviews ⭐⭐⭐⭐⭐](https://wordpress.org/support/plugin/auto-install-free-ssl/reviews/?filter=5) and a 4.9 out of 5 stars average rating, 'Auto-Install Free SSL' empowers you to generate Free SSL Certificates in your WordPress dashboard effortlessly.** This plugin helps secure your website and saves you money.
+**With over [390 five-star reviews ⭐⭐⭐⭐⭐](https://wordpress.org/support/plugin/auto-install-free-ssl/reviews/?filter=5) and a 4.9 out of 5 stars average rating, 'Auto-Install Free SSL' empowers you to generate Free SSL Certificates in your WordPress dashboard effortlessly.** This plugin helps secure your website and saves you money.
 
 Let's Encrypt™ SSL Certificate is FREE. But they provide it through their API. If you are not a programmer, you need to study and practice programming for years to be able to use the API of Let's Encrypt™ to generate a single Free SSL Certificate for your WordPress website.
 
@@ -31,7 +31,6 @@ https://vimeo.com/745390051
 * PHP 5.6
 * OpenSSL extension
 * Curl extension
-* PHP directive allow_url_fopen = On
 * The website should be assigned to a domain name (e.g., example.com) accessible online.
 * Ensure your web server can serve static files – a standard feature in most web servers.
 
@@ -292,9 +291,9 @@ After generating an SSL certificate with this plugin, if SSL installation fails 
 
 Previously, only the intermediate certificate was included in the CA bundle, which caused installation failures on hosting servers (including cPanel servers) where the root certificate was not present in the local trust store. 
 
-Version 4.6.3 and later now always includes the root certificate in the CA bundle, which resolves this error. Please update the plugin to the latest version.
+Version 4.6.3 and later now always includes the root certificate in the CA bundle, which resolves this error. **Please update the plugin to the latest version.**
 
-**This fix also ensures correct handling of Let's Encrypt's newer Generation Y chains, which can contain more than three certificates.**
+This fix also ensures correct handling of Let's Encrypt's newer Generation Y chains, which can contain more than three certificates.
 
 = How do I install the 'Auto-Install Free SSL' plugin? =
 
@@ -471,6 +470,22 @@ If you have an unlimited site license and created a cron job manually, ensure yo
 
 
 == Changelog ==
+
+= 4.7.0 =
+* The plugin is now compatible with PHP 5.6 through 8.5.
+* [Pro] Compatibility: Fixed a compatibility regression introduced in the previous release that prevented the plugin's cPanel settings, cron job, and issue SSL option loading on PHP 5.6. Replaced PHP 7.0+ null coalescing syntax with PHP 5.6–safe alternatives in cPanel API error handling.
+* Compatibility: Added array guards before count() calls to prevent PHP 7.2+ warnings.
+* Compatibility: Replaced strlen() checks on WordPress options and nullable values with !empty() to avoid PHP 8.0+ TypeErrors and PHP 8.1+ deprecations.
+* Compatibility: Added explicit property declarations in ACME, DNS API, and cPanel classes to resolve PHP 8.2 dynamic property deprecations.
+* Compatibility: Removed redundant curl_close() calls to address PHP 8.5 deprecations.
+* Compatibility: Aligned the runtime PHP version check with the declared minimum requirement of PHP 5.6.
+* Removed the deprecated indigophp/hash-compat package and updated Composer autoloading accordingly.
+* Updated usrflo/registered-domain-libs with the latest Public Suffix List TLD tree, including new TLD entries and structural improvements. Improved registered-domain validation to better support internationalized (UTF-8) domain names.
+* Optimized registered-domain parsing by reusing a single regDomain instance per request.
+* Updated the Freemius WordPress SDK to version 2.13.4.
+* Changed: removed the hard requirement for allow_url_fopen. The plugin uses cURL for ACME and related HTTP requests; allow_url_fopen is only a fallback in legacy cPanel XML-API code when cURL is unavailable.
+* Added an explicit WordPress 4.1+ runtime check (including the cron.php fallback path) to match the plugin header and documentation.
+* Updated readme.txt minimum requirements to remove allow_url_fopen check.
 
 = 4.6.3 =
 * Fix: The CA bundle now always includes the root certificate. Previously, only the intermediate certificate was included in the CA bundle, which caused installation failures on hosting servers (including cPanel servers) where the root certificate was not present in the local trust store. This fix also ensures correct handling of Let's Encrypt's newer Generation Y chains, which can contain more than three certificates.

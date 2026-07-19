@@ -1085,7 +1085,7 @@ class GenerateSSLmanually
             ?>
             .</p>
 
-            <p><?= __( "The content of the above links should EXACTLY match the content of the downloaded files.", 'auto-install-free-ssl' ) ?><?= aifs_server_software() == 'ms-iis' ? " " . /* translators: %1$s: Name of a file, e.g., 'web.config'; %2$s: Name of a directory, e.g., '.well-known' */ sprintf( __( 'If the above links display errors, create a %1$s file inside the %2$s directory and paste the following content into it:', 'auto-install-free-ssl' ), '<strong>web.config</strong>', '.well-known') . ' <pre><code>'.htmlspecialchars($code).'</code></pre>' : "" ?></p>
+            <p><?= __( "The content of the above links should EXACTLY match the content of the downloaded files.", 'auto-install-free-ssl' ) ?><?= aifs_server_software() == 'ms-iis' ? " " . /* translators: %1$s: Name of a file, e.g., 'web.config'; %2$s: Name of a directory, e.g., '.well-known' */ sprintf( __( 'If the above links display errors, create a %1$s file inside the %2$s directory and paste the following content into it:', 'auto-install-free-ssl' ), '<strong>web.config</strong>', '.well-known') . ' <pre><code>'.htmlspecialchars($code, ENT_COMPAT).'</code></pre>' : "" ?></p>
 
             <p><br /><em><?= __( "Is everything okay? Now click the button below.", 'auto-install-free-ssl' ) ?></em></p>
 

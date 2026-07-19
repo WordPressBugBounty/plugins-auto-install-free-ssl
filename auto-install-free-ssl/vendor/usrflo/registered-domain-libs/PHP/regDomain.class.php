@@ -36,7 +36,7 @@
  */
 
 /*
- * Added namespace by Anindya Sundar Mandal to fix a bug where a fatal error would be thrown in combination with plugin that uses this library.
+ * Forked: Added namespace by Anindya Sundar Mandal to fix a bug where a fatal error would be thrown in combination with plugin that uses this library.
  */
 
 namespace aifs;
@@ -44,14 +44,6 @@ namespace aifs;
 class regDomain {
 	/* tld tree */
 	protected $tldTree = array();
-	
-	/* load tld tree into object */
-	function __construct() {
-	    /* include tld tree data */
-	    include(__DIR__ . '/effectiveTLDs.inc.php');
-	    $this->tldTree = $tldTree;
-	    
-	}
 
 	/* main function */
 	public function getRegisteredDomain($signingDomain, $fallback = TRUE) {
@@ -79,18 +71,34 @@ class regDomain {
 
 	/* validate parts */
 	public function validDomainPart($domPart) {
+
+	    if ($domPart===NULL) {
+	        return FALSE;
+	    }
+	    
 		// see http://www.register.com/domain-extension-rules.rcmx
 		$len = strlen($domPart);
 
-		// not more than 63 characters
-		if ($len>63) return FALSE;
-
 		// not less than 1 characters --> there are TLD-specific rules that could be considered additionally
-		if ($len<1) return FALSE;
+		if ($len<1) {
+		    return FALSE;
+		}
+		
+		// temporarily disabled the domain label validation below:
+		// i) the length of 63 characters refers to ACE encoding but the public suffix list is working on UTF-8 characters
+		// ii) the allowed characters don't match all required UTF-8 characters
+		return TRUE;
+		
+		// not more than 63 characters
+		if ($len>63) {
+		    return FALSE;
+		}
 
 		// Use only letters, numbers, or hyphen ("-")
 		// not beginning or ending with a hypen (this is TLD specific, be aware!)
-		if (!preg_match("/^([a-z0-9])(([a-z0-9-])*([a-z0-9]))*$/", $domPart)) return FALSE;
+		if (!preg_match("/^([a-z0-9\p{L}])(([a-z0-9-\p{L}])*([a-z0-9\p{L}]))*$/u", $domPart)) {
+		    return FALSE;
+		}
 
 		return TRUE;
 	}
@@ -125,4 +133,14 @@ class regDomain {
 		return NULL;
 	}
 
+	/* load tld tree into object */
+	function __construct() {
+		/* include tld tree data */
+		include(dirname(__FILE__) . '/effectiveTLDs.inc.php');
+		$this->tldTree = $tldTree;
+
+	}
+
 }
+
+?>

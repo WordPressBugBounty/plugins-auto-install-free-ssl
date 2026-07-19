@@ -202,7 +202,6 @@ class Controller {
         // We don't need the body, just the response
         curl_exec( $ch );
         $httpcode = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
-        curl_close( $ch );
         //$this->logger->log( sprintf('%1$s - isDomainOnlineCurl() HTTP code: %2$s', $domain, $httpcode) );
         $this->logger->write_log( 'info', sprintf( '%1$s - isDomainOnlineCurl() HTTP code: %2$s', $domain, $httpcode ), [
             'event' => 'ping',
@@ -223,7 +222,7 @@ class Controller {
     public function domains_array_raw( $single_domain ) {
         $domains_array = [];
         $domains_array[] = $single_domain['domain'];
-        if ( \strlen( $single_domain['serveralias'] ) > 1 ) {
+        if ( !empty( $single_domain['serveralias'] ) && \strlen( $single_domain['serveralias'] ) > 1 ) {
             $domains = explode( ' ', $single_domain['serveralias'] );
             foreach ( $domains as $domain ) {
                 if ( $single_domain['domain'] !== $domain ) {

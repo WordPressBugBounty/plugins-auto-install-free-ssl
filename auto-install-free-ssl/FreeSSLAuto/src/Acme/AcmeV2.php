@@ -633,7 +633,7 @@ class AcmeV2 {
      * @return array ['certificate' => string, 'cabundle' => string]
      * @since 4.6.3
      */
-    function splitFullChain( $fullchain ) {
+    public function splitFullChain( $fullchain ) {
         // Extract all PEM blocks
         preg_match_all( '/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/s', $fullchain, $matches );
         $certs = $matches[0];

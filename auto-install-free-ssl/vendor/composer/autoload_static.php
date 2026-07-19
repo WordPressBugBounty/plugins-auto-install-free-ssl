@@ -4,37 +4,71 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit38dd793580206d82dbe1f232ba20bd21
+class ComposerStaticInit8d28e1be440670bf7be1777b0adb378f
 {
-    public static $files = array (
-        '7c9b72b4e40cc7adcca6fd17b1bf4c8d' => __DIR__ . '/..' . '/indigophp/hash-compat/src/hash_equals.php',
-        '43d9263e52ab88b5668a28ee36bd4e65' => __DIR__ . '/..' . '/indigophp/hash-compat/src/hash_pbkdf2.php',
-    );
-
     public static $prefixLengthsPsr4 = array (
-        'A' => 
+        'A' =>
         array (
             'AutoInstallFreeSSL\\FreeSSLAuto\\' => 31,
         ),
     );
 
     public static $prefixDirsPsr4 = array (
-        'AutoInstallFreeSSL\\FreeSSLAuto\\' => 
+        'AutoInstallFreeSSL\\FreeSSLAuto\\' =>
         array (
             0 => __DIR__ . '/../..' . '/FreeSSLAuto/src',
         ),
     );
 
     public static $classMap = array (
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Acme\\AcmeV1' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Acme/AcmeV1.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Acme\\AcmeV2' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Acme/AcmeV2.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Acme\\Base64UrlSafeEncoder' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Acme/Base64UrlSafeEncoder.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Acme\\Client' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Acme/Client.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Acme\\ClientInterface' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Acme/ClientInterface.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Acme\\Factory' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Acme/Factory.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\AdminNotice' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Admin/AdminNotice.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\AutoDataEntry' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Admin/AutoDataEntry.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\Factory' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Admin/Factory.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\ForceHttpsPage' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Admin/ForceHttpsPage.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\ForceSSL' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Admin/ForceSSL.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\GenerateSSLmanually' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Admin/GenerateSSLmanually.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\HomeOptions' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Admin/HomeOptions.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\Log' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Admin/Log.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Controller' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Controller.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Email' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Email.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\FreeSSLAuto' => __DIR__ . '/../..' . '/FreeSSLAuto/src/FreeSSLAuto.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Logger' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Logger.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\AddCronJob' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/AddCronJob.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\AddDnsServiceProviderSettings' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/AddDnsServiceProviderSettings.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\AddDomainSettings' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/AddDomainSettings.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\BasicSettings' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/BasicSettings.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\ChangeLeKey' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/ChangeLeKey.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\DnsServiceProvidersSettings' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/DnsServiceProvidersSettings.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\DomainsSettings' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/DomainsSettings.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\DownloadSslCertificates' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/DownloadSslCertificates.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\IssueFreeSSL' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/IssueFreeSSL.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\MultiDomain' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/MultiDomain.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\RevokeSslCert' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/RevokeSslCert.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\TmpSSL' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/TmpSSL.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\cPanelExcludeDomainsSettings' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/cPanelExcludeDomainsSettings.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\cPanelSettings' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/cPanelSettings.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\DnsApi' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/DnsApi.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\DnsCurl' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/DnsCurl.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\cloudflare' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/cloudflare.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\godaddy' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/godaddy.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\namecheap' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/namecheap.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\cPanel\\cPanel' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/cPanel/cPanel.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\cPanel\\xmlapi' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/cPanel/xmlapi.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
     );
 
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit38dd793580206d82dbe1f232ba20bd21::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit38dd793580206d82dbe1f232ba20bd21::$prefixDirsPsr4;
-            $loader->classMap = ComposerStaticInit38dd793580206d82dbe1f232ba20bd21::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit8d28e1be440670bf7be1777b0adb378f::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit8d28e1be440670bf7be1777b0adb378f::$prefixDirsPsr4;
+            $loader->classMap = ComposerStaticInit8d28e1be440670bf7be1777b0adb378f::$classMap;
 
         }, null, ClassLoader::class);
     }

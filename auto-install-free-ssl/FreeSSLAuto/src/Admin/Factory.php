@@ -338,7 +338,6 @@ class Factory {
                 $effective_url = curl_getinfo( $handle, CURLINFO_EFFECTIVE_URL );
                 $redirect_url = curl_getinfo( $handle, CURLINFO_REDIRECT_URL );
                 $http_status_code = curl_getinfo( $handle, CURLINFO_HTTP_CODE );
-                curl_close( $handle );
                 $checkURL = $this->checkcPanelInUrl( $effective_url );
                 if ( ($http_status_code === 301 || $http_status_code === 200) && ($checkURL['endsWith2083Port'] || $checkURL['endsWithCpanel']) && strpos( $response, 'cPanel' ) !== false ) {
                     $hostname = $checkURL['string'];
@@ -446,7 +445,6 @@ class Factory {
             $redirect_url = curl_getinfo( $handle, CURLINFO_REDIRECT_URL );
             $http_status_code = curl_getinfo( $handle, CURLINFO_HTTP_CODE );
             $error = curl_errno( $handle );
-            curl_close( $handle );
             if ( $http_status_code !== 3 ) {
                 if ( $is_reset_host === false && $http_status_code === 301 ) {
                     if ( isset( $redirect_url ) ) {
@@ -727,13 +725,13 @@ class Factory {
                 /*__('Can\'t create the \'%1$s\' file in the directory \'%2$s\'. Please manually create it, and paste this code into it: %3$s', 'auto-install-free-ssl'),
                 			$file,
                 			$dir_path,
-                			"<pre>" . htmlspecialchars($data) . "</pre>"
+                			"<pre>" . htmlspecialchars($data, ENT_COMPAT) . "</pre>"
                 		), __FILE__, __LINE__);*/
                 $this->logger->exception_sse_friendly( sprintf(
                     'Can\'t create the \'%1$s\' file in the directory \'%2$s\'. Please manually create it, and paste this code into it: %3$s',
                     $file,
                     $dir_path,
-                    "<pre>" . htmlspecialchars( $data ) . "</pre>"
+                    "<pre>" . htmlspecialchars( $data, ENT_COMPAT ) . "</pre>"
                 ), __FILE__, __LINE__ );
                 //since 3.6.1, Don't translate exception message.
             }
@@ -835,7 +833,6 @@ class Factory {
         }
         //$http_code = curl_getinfo($curlInit, CURLINFO_HTTP_CODE);
         // Close a cURL session
-        curl_close( $curlInit );
         /*echo "<pre>";
         			print_r($response);
         		echo "</pre>";
@@ -1061,7 +1058,6 @@ class Factory {
             ] );
         }
         $info = curl_getinfo( $ch );
-        curl_close( $ch );
         if ( is_array( $info['certinfo'] ) && count( $info['certinfo'] ) > 0 ) {
             return $info['certinfo'];
         }
@@ -1179,7 +1175,6 @@ class Factory {
             ] );
         }
         $http_code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
-        curl_close( $ch );
         if ( $http_code == 403 ) {
             return false;
         } else {
@@ -1232,7 +1227,7 @@ class Factory {
             // or $number_of_ssl_generated >= 1
             add_option( 'aifs_is_generated_ssl_installed', 1 );
         }
-        if ( strlen( get_option( 'aifs_display_review' ) ) === 0 && get_option( 'aifs_is_generated_ssl_installed' ) ) {
+        if ( !empty( get_option( 'aifs_is_generated_ssl_installed' ) ) && empty( get_option( 'aifs_display_review' ) ) ) {
             // Logic refactored since 3.4.0
             $display_review = false;
             if ( aifs_is_free_version() ) {

@@ -36,7 +36,7 @@
  */
 
 /*
- * Used namespace and renamed the functions by Anindya Sundar Mandal to fix a bug where a fatal error would be thrown in combination with plugin that uses this library.
+ * Forked: Used namespace and renamed the functions by Anindya Sundar Mandal to fix a bug where a fatal error would be thrown in combination with plugin that uses this library.
  */
 
 use aifs\regDomain;
@@ -44,11 +44,22 @@ use aifs\regDomain;
 /* pull in class */
 require_once(dirname(__FILE__) . '/regDomain.class.php');
 
-/* create global object */
-$regDomainObj = new regDomain;
+/**
+ * Return a single regDomain instance per request (avoids reloading effectiveTLDs.inc.php).
+ *
+ * @return regDomain
+ */
+function aifs_reg_domain_object() {
+	static $regDomainObj = null;
+
+	if ( null === $regDomainObj ) {
+		$regDomainObj = new regDomain();
+	}
+
+	return $regDomainObj;
+}
 
 /**
- * @todo Used in FREE version
  *
  * @param $signingDomain
  * @param bool $fallback
@@ -56,23 +67,14 @@ $regDomainObj = new regDomain;
  * @return string|null
  */
 function aifs_getRegisteredDomain($signingDomain, $fallback = TRUE) {
-	/* pull in object */
-    $regDomainObj = new regDomain();
-	/* return object method */
-	return $regDomainObj->getRegisteredDomain($signingDomain, $fallback);
+	return aifs_reg_domain_object()->getRegisteredDomain($signingDomain, $fallback);
 }
 
 function aifs_validDomainPart($domPart) {
-	/* pull in object */
-    $regDomainObj = new regDomain();
-	/* return object method */
-	return $regDomainObj->validDomainPart($domPart);
+	return aifs_reg_domain_object()->validDomainPart($domPart);
 }
 
 // recursive helper method
 function aifs_findRegisteredDomain($remainingSigningDomainParts, &$treeNode) {
-	/* pull in object */
-    $regDomainObj = new regDomain();
-	/* return object method */
-	return $regDomainObj->findRegisteredDomain($remainingSigningDomainParts, $treeNode);
+	return aifs_reg_domain_object()->findRegisteredDomain($remainingSigningDomainParts, $treeNode);
 }
