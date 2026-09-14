@@ -4,8 +4,8 @@ License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 Tags: free ssl, ssl certificate, https redirect, free ssl certificate, ssl security
 Requires at least: 4.1
-Tested up to: 7.0
-Stable tag: 4.7.0
+Tested up to: 7.1
+Stable tag: 5.0.0
 Requires PHP: 5.6
 
 Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADLOCK in the browser, get automatic Renewal Reminders from plugin.
@@ -278,6 +278,14 @@ If you encounter issues with the Let's Encrypt™ API connection and wish to log
 
 To stop logging all responses from the Let's Encrypt™ server, replace ‘yes’ with ‘no’ in the above URL.
 
+For deeper, AI-assisted troubleshooting, you can additionally log every single Let's Encrypt™ server response (including responses with an unexpected HTTP status code) in JSON format by writing the following URL in the address bar by replacing 'www.example.com' with your domain name, and hit enter:
+
+ ` http://www.example.com/wp-admin/admin.php?page=auto_install_free_ssl&log_all_ca_server_response_array_json=yes `
+
+Each logged response is wrapped inside clearly named markers so it can be easily located and extracted from the log file, including by an AI model: `[[AIFS_CA_RESPONSE_JSON_FORMAT_START]]` ... `[[AIFS_CA_RESPONSE_JSON_FORMAT_END]]` for JSON-encoded array responses, `[[AIFS_CA_RESPONSE_ARRAY_FORMAT_START]]` ... `[[AIFS_CA_RESPONSE_ARRAY_FORMAT_END]]` when JSON encoding fails, or `[[AIFS_CA_RESPONSE_START]]` ... `[[AIFS_CA_RESPONSE_END]]` for non-array (raw) responses. To stop logging, replace ‘yes’ with ‘no’ in the above URL.
+
+**Difference between the two logging options:** `aifs_log_all_ca_server_response` logs only successful API responses (HTTP status 200, 201, 202, or 204) as plain text. `aifs_log_all_ca_server_response_array_json` logs every response—including failed or unexpected ones—in a structured, AI-friendly JSON format with clearly named markers for easier parsing.
+
 Please check the existing topics in the WordPress [support forum](https://wordpress.org/support/plugin/auto-install-free-ssl) before creating a new topic for support or reporting a bug.
 
 
@@ -470,6 +478,49 @@ If you have an unlimited site license and created a cron job manually, ensure yo
 
 
 == Changelog ==
+
+= 5.0.0 =
+* [Pro] Feature: GoDaddy DNS Service Provider entries can now use either a classic API Key/Secret pair or a newer Personal Access Token (PAT) for wildcard SSL DNS-01 validation; GoDaddy TXT records are updated in place on renewal instead of being deleted and recreated.
+* [Pro] Fix: Wildcard SSL certificate issuance using the DNS-01 challenge (any DNS Service Provider, including cPanel) was completely broken -- every wildcard request sent an empty challenge response to Let's Encrypt™ and was rejected. This is now fixed.
+* [Pro] Security: Following a full-codebase security review, closed several cPanel credential-exposure issues: cPanel API debug logging (which could log raw API responses/headers) is now off by default, cPanel credentials were briefly written back into the WordPress options table on every admin page load in cPanel mode (now fixed), and the plugin log's secret-redaction pattern now also masks base64/base64url tokens (e.g. cPanel/DNS-provider API tokens), not just hex ones.
+* Security: The certificate-file download page, the manual HTTP-01 challenge-file handler, and the Log page's date parameter now require administrator (manage_options) capability and strictly validate their inputs, closing a path-traversal opening that could allow reading or writing files outside the plugin's own certificate folder.
+* Security: Added a missing nonce/capability check to the Force HTTPS override link, and switched the Force HTTPS "revert" link (sent by email) to a timing-safe comparison for its one-time secret.
+* [Pro] Security: Added missing nonce/capability checks (CSRF protection) to the Domains and DNS Service Provider "Delete" links and to the Add Cron Job form.
+* Security: Hardened output escaping on the Log page, admin notices, and the Generate SSL page's admin-email field, closing a couple of admin-only XSS opportunities.
+* [Pro] Security: Hardened output escaping on the live log stream, the Download SSL Certificates page, and the Domains / DNS Service Provider / Revoke SSL Certificate settings screens, closing a handful of admin-only XSS opportunities.
+* [Pro] Security: DNS record values sent to the Namecheap API are now properly URL-encoded, so a value containing "&" or "=" can no longer corrupt the request or drop unrelated DNS records; fixed Cloudflare DNS-01 TXT-record creation failing (or erroring) for subdomains and on API authentication errors, and fixed it creating a duplicate TXT record instead of updating the existing one for a subdomain; the DNS Service Provider list is now limited to the providers this plugin actually supports.
+* [Pro] Security: Added an optional shared-secret and a run lock for cron.php when triggered over HTTP (configurable from the Add Cron Job page), and a warning on the cPanel Settings page when TLS certificate verification is left disabled while a verified connection to the same host is confirmed to work.
+* [Pro] Reliability: Added connection/response timeouts to all cPanel API calls so an unresponsive cPanel host can no longer hang a cron run or admin request.
+* [Pro] Fix: Account-key rollover (during Let's Encrypt™ key changes) now updates the private and public key files as a single atomic operation, so a failure partway through can no longer leave mismatched key files on disk.
+* [Pro] Fix: Fixed wildcard-domain grouping so a domain that didn't need renewal no longer corrupts the grouping of domains checked afterward, and fixed two logic bugs that could make the plugin miss an existing (or already-issued wildcard) certificate and waste Let's Encrypt™ rate-limit budget on an unnecessary reissue.
+* Fix: Fixed several code paths that could fatal or misbehave with an unwritable log file, a non-array admin-email setting, a corrupt/unparseable SSL certificate in the SSL renewal reminder email, or an undefined array offset on the Generate SSL page on a fresh install.
+* [Pro] Fix: Fixed a wide class of fatal PHP 8 errors that could occur on a fresh install, or with a stale/tampered settings URL, across the premium settings screens (Revoke SSL Certificate, Multi-Domain, Add Domain, Add DNS Service Provider), in the main cron/issuance flow when an invalid ACME protocol version was configured, and when building admin notification emails or rendering the Download SSL Certificates page from a corrupt certificate.
+* [Pro] Fix: Restored a missing regular-expression match that made converting a certificate from PEM to DER format always produce corrupt output during cPanel SSL installation.
+* Reliability: Fixed a dead status check in ACME challenge verification, bounded every previously-unbounded ACME polling loop (challenge verification, certificate fetch) with a maximum attempt count and a time limit so a stuck step now fails cleanly with a log entry instead of hanging indefinitely, and guarded several unchecked ACME server response reads against an unexpected response shape.
+* [Pro] Fix: Removed a remaining curl_close() call path for PHP 8.5, where the function is deprecated and cURL handles are garbage-collected automatically.
+* [Pro] cPanel: Since cPanel 134 (released 2026-08-24) disables password (HTTP Basic) authentication for its API by default, API Token is now the recommended and default authentication method throughout the plugin: the cPanel Settings page lists API Token before Password, pre-selects it, pre-checks SSL certificate verification for new installs, and shows/hides the relevant cPanel 134+ and TLS-verification warnings as you change your choices; an explicit "Authenticate With" (API Token / Password) choice and a "Clear the stored API token" option make switching between the two reliably take effect instead of a stale stored token silently continuing to be used; and wildcard SSL with cPanel as the DNS Service Provider no longer requires a password at all -- DNS-01 TXT records are now added through cPanel's UAPI (or the legacy ZoneEdit API on older servers), both authenticating with the API Token.
+* [Pro] cPanel: When a connection fails and a password was the credential actually used, the cPanel 134+ cause is now clearly explained -- with a 2FA-specific hint and guidance toward creating an API Token -- at the top of the possible-causes list on the cPanel Settings page, the Exclude Domains page, the dashboard admin notice, the notification email, and the plugin log, instead of as static help text alone.
+* [Pro] cPanel: cURL connection errors (including SSL/TLS certificate verification failures) are now always written to the plugin log for troubleshooting, even though the on-screen message stays generic.
+* [Pro] cPanel: Added the Let's Encrypt™ / FreeSSL.tech Terms of Service & Privacy Policy agreement text directly above the cPanel Settings submit button.
+* [Pro] cPanel: Fixed DNS-01 wildcard SSL validation creating a duplicate _acme-challenge TXT record in the DNS zone on each renewal, instead of updating the existing record in place.
+* [Pro] Fix: The Namecheap DNS Service Provider's TLD list lookup could fatal error when Namecheap's API returned an error instead of a TLD list (e.g. from an unrecognized IP address), and could then cache that failed lookup for up to 7 days; both are now fixed.
+* [Pro] Fix: Saving a DNS Service Provider with an invalid field (e.g. a blank required API Identifier) appeared to succeed instead of showing the validation error; and switching GoDaddy's authentication method from Personal Access Token back to Classic API Key no longer leaves the API Identifier field able to be submitted blank.
+* Security: HTTPS redirects (Force HTTPS) now always target the site's configured Home URL host, instead of the requested Host header. This is intentional hardening against Host-header-based redirect abuse; if you intentionally serve this site under multiple hostnames (an alias domain, a staging/preview subdomain, IP-based smoke testing), every HTTP visitor to those hosts is now redirected to the canonical Home URL host.
+* Fix: Force HTTPS (activate/deactivate/revert) now detects when WP_SITEURL/WP_HOME is hard-coded in wp-config.php -- previously it silently wrote a siteurl/home value to the database that WordPress ignores, while still showing a success message and sending a confirmation email. It now shows one combined notice pointing you to wp-config.php instead of a misleading success message stacked with a separate error.
+* [Pro] Exclude Domains: Fixed excluding a domain no longer excluding its cPanel server aliases, which could cause SSL issuance to silently retry an alias domain the admin had explicitly excluded; and fixed the page showing a false "can't connect to cPanel" error before any cPanel host or credentials had actually been saved.
+* [Pro] cPanel: A stale cPanel connection-failure notice on the dashboard now clears as soon as the cPanel Settings form is saved again, instead of persisting indefinitely.
+* [Pro] Add Domain: A document root that can't be verified with realpath()/is_dir() (e.g. under open_basedir restrictions on shared hosting) is now saved with a warning instead of being rejected outright. A document root that *does* resolve via realpath() but isn't a directory (e.g. it points at a file) is still rejected outright, since that case is never valid and is not the open_basedir "unverifiable" case above.
+* Security: Fixed a bug where, if the plugin could not obtain a fresh ACME nonce after its retries were exhausted, the ACME client could still report a stale HTTP 200 left over from those unrelated nonce-fetch attempts. The account-key-rollover and certificate-revocation code paths trusted that stale status, so a transient nonce failure could make the plugin believe a key rollover or certificate revocation had succeeded — deleting the real account key or a still-valid certificate. The client now invalidates the last response status whenever a signed request is aborted before it's actually sent.
+* Reliability: Fixed a possible unbounded-recursion hang when the ACME server does not return a Replay-Nonce header (e.g. during a Let's Encrypt™ outage); the plugin now retries a bounded number of times and then fails with a clear error.
+* Reliability: Fixed a logging bug where a failed log-directory creation could silently disable all further logging for the rest of a cron run.
+* Reliability: ACME HTTP requests blocked by this site's own WP_HTTP_BLOCK_EXTERNAL setting now log an actionable message naming the ACME hosts to add to WP_ACCESSIBLE_HOSTS, and no longer hard-kill a CLI cron run on the first failed request.
+* Security: A PHP build that cannot generate cryptographically secure random values now fails safely (with a clear admin notice and a technical log entry) when saving a cPanel password/API token or DNS provider credential, instead of a raw PHP fatal error or, worse, silently storing unencrypted-looking data.
+* Introduced a new capability to log every single Let's Encrypt™ server response (even those with an unexpected HTTP status code) in JSON format, wrapped inside AI-agent friendly markers to assist AI-based troubleshooting. This can be activated by setting the option 'aifs_log_all_ca_server_response_array_json' to true, or by accessing the following URL (login required):
+http://www.example.com/wp-admin/admin.php?page=auto_install_free_ssl&log_all_ca_server_response_array_json=yes    (Please replace 'www.example.com' with your domain name.)
+* Improved minimum system requirement checks: validate PHP, WordPress, OpenSSL, and cURL on activation and in admin; soft-fail cron/SSL actions when requirements are missing, without taking down the public site.
+* Update tested compatibility to WordPress 7.1 in readme.txt
+* effectiveTLDs.inc.php was updated from the latest Public Suffix List.
+* Fix: Force HTTPS (activate/deactivate/revert) now detects when WP_SITEURL/WP_HOME is hard-coded in wp-config.php -- previously it silently wrote a siteurl/home value to the database that WordPress ignores, while still showing a success message and sending a confirmation email. It now shows one combined notice pointing you to wp-config.php instead of a misleading success message stacked with a separate error.
 
 = 4.7.0 =
 * The plugin is now compatible with PHP 5.6 through 8.5.

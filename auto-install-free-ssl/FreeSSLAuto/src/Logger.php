@@ -32,6 +32,61 @@ use DateTime;
 //you can use any logger according to Psr\Log\LoggerInterface
 class Logger {
     /**
+     * Optional override for the log directory (unit tests).
+     *
+     * @var string|null
+     */
+    private $log_directory = null;
+
+    /**
+     * When false, CLI exit events do not call die() (unit tests).
+     *
+     * @var bool
+     */
+    private $allow_cli_die = true;
+
+    /**
+     * Optional override for is_cli() detection (unit tests).
+     *
+     * @var bool|null
+     */
+    private $force_is_cli = null;
+
+    /**
+     * Recursion guard for write_log() (mkdir / exception paths must not re-enter).
+     *
+     * @var bool
+     */
+    private $writing_log = false;
+
+    /**
+     * Inject a custom log directory (used by unit tests).
+     *
+     * @param string $path Absolute path to the log directory.
+     */
+    public function setLogDirectory( $path ) {
+        $this->log_directory = $path;
+    }
+
+    /**
+     * Control whether CLI exit events call die() (used by unit tests).
+     *
+     * @param bool $allow Whether die() is allowed on exit events in CLI.
+     */
+    public function setAllowCliDie( $allow ) {
+        $this->allow_cli_die = (bool) $allow;
+    }
+
+    /**
+     * Force is_cli() result (used by unit tests). Pass null to clear.
+     *
+     * @param bool|null $is_cli Forced CLI flag.
+     */
+    public function setIsCli( $is_cli ) {
+        $this->force_is_cli = ( null === $is_cli ? null : (bool) $is_cli );
+    }
+
+    /**
      *
      *
      * @param $message
@@ -76,48 +131,69 @@ class Logger {
      * @param array $context
      */
     public function write_log( $level, $message, $context ) {
-        //get log file name as per date
-        $log_directory = AIFS_UPLOAD_DIR . AIFS_DS . 'log';
-        if ( !is_dir( $log_directory ) ) {
-            @mkdir( $log_directory, 0700, true );
+        // Prevent infinite recursion when exception_sse_friendly() falls back into log_v2/write_log.
+        if ( $this->writing_log ) {
+            return;
         }
-        if ( !is_dir( $log_directory ) ) {
-            //throw new \RuntimeException("Can't create directory '$log_directory'. Please manually create this directory, set permission 0755 and try again.");
-            /*$this->exception_sse_friendly(
-              /* translators: %s: A directory path */
-            /* sprintf(__( "Can't create directory '%s'. Please manually create this directory, set permission 0755, and try again.", 'auto-install-free-ssl' ), $log_directory),
-                __FILE__,
-                __LINE__,
-                false
-               );*/
-            $this->exception_sse_friendly(
-                /* translators: %s: A directory path */
-                sprintf( "Can't create directory '%s'. Please manually create this directory, set permission 0755, and try again.", $log_directory ),
-                __FILE__,
-                __LINE__,
-                false
-            );
-            //since 3.6.1, Don't translate exception message.
+        $this->writing_log = true;
+        // try/finally so a thrown exception (e.g. exception_sse_friendly() re-throwing under CLI)
+        // can never leave $this->writing_log stuck true, which would silently no-op every
+        // subsequent write_log()/log_v2() call for the rest of this request/cron run.
+        try {
+            //get log file name as per date
+            $log_directory = ( $this->log_directory ? $this->log_directory : AIFS_UPLOAD_DIR . AIFS_DS . 'log' );
+            if ( !is_dir( $log_directory ) ) {
+                @mkdir( $log_directory, 0700, true );
+            }
+            if ( !is_dir( $log_directory ) ) {
+                //throw new \RuntimeException("Can't create directory '$log_directory'. Please manually create this directory, set permission 0755 and try again.");
+                /*$this->exception_sse_friendly(
+                  /* translators: %s: A directory path */
+                /* sprintf(__( "Can't create directory '%s'. Please manually create this directory, set permission 0755, and try again.", 'auto-install-free-ssl' ), $log_directory),
+                    __FILE__,
+                    __LINE__,
+                    false
+                   );*/
+                $this->exception_sse_friendly(
+                    /* translators: %s: A directory path */
+                    sprintf( "Can't create directory '%s'. Please manually create this directory, set permission 0755, and try again.", $log_directory ),
+                    __FILE__,
+                    __LINE__,
+                    false
+                );
+                //since 3.6.1, Don't translate exception message.
+                return;
+            }
+            /*if(!file_exists($log_directory . AIFS_DS . ".htaccess")){
+                  if(!file_put_contents($log_directory . AIFS_DS . ".htaccess", "Order deny,allow\nDeny from all")){
+                      $exp_text = "Can't create a .htaccess file in the directory '".$log_directory."'. Please manually create it, and paste the following code in it. \n\nOrder deny,allow\nDeny from all";
+                      //throw new \RuntimeException("Can't create a .htaccess file in the directory '".$log_directory."'. Please manually create it, and paste the following code in it. \n\nOrder deny,allow\nDeny from all \n\n");
+                      $this->exception_sse_friendly($exp_text, __FILE__, __LINE__, false);
+                  }
+              }*/
+            $factory = new Factory();
+            $factory->create_security_files( $log_directory );
+            $message = $factory->redactSecrets( (string) $message );
+            $filename = ( function_exists( 'wp_date' ) ? wp_date( 'Y-m-d' ) . '.log' : date( 'Y-m-d' ) . '.log' );
+            $handle = @fopen( $log_directory . AIFS_DS . $filename, 'a' );
+            // M-3: fopen()'s return was never checked before fwrite()/fclose() --
+            // fwrite(false, ...) is a fatal TypeError on PHP 8 (e.g. an unwritable
+            // log file/directory that create_security_files() didn't already catch).
+            if ( false === $handle ) {
+                error_log( 'Auto-Install Free SSL: unable to open log file for writing: ' . $log_directory . AIFS_DS . $filename );
+                return;
+            }
+            $log_text = wp_kses_post( current_time( 'mysql' ) . " [{$level}] {$message}" ) . "\n\n";
+            if ( $context['event'] == 'exit' ) {
+                $log_text .= "-----------------------------------------------------------------------------------------------------------------------------------------------------------------\n\n";
+            }
+            fwrite( $handle, $log_text );
+            // htmlspecialchars($log_text);
+            fclose( $handle );
+            //$this->clean_log_directory();
+        } finally {
+            $this->writing_log = false;
         }
-        /*if(!file_exists($log_directory . AIFS_DS . ".htaccess")){
-              if(!file_put_contents($log_directory . AIFS_DS . ".htaccess", "Order deny,allow\nDeny from all")){
-                  $exp_text = "Can't create a .htaccess file in the directory '".$log_directory."'. Please manually create it, and paste the following code in it. \n\nOrder deny,allow\nDeny from all";
-                  //throw new \RuntimeException("Can't create a .htaccess file in the directory '".$log_directory."'. Please manually create it, and paste the following code in it. \n\nOrder deny,allow\nDeny from all \n\n");
-                  $this->exception_sse_friendly($exp_text, __FILE__, __LINE__, false);
-              }
-          }*/
-        $factory = new Factory();
-        $factory->create_security_files( $log_directory );
-        $filename = ( function_exists( 'wp_date' ) ? wp_date( 'Y-m-d' ) . '.log' : date( 'Y-m-d' ) . '.log' );
-        $handle = fopen( $log_directory . AIFS_DS . $filename, 'a' );
-        $log_text = wp_kses_post( current_time( 'mysql' ) . " [{$level}] {$message}" ) . "\n\n";
-        if ( $context['event'] == 'exit' ) {
-            $log_text .= "-----------------------------------------------------------------------------------------------------------------------------------------------------------------\n\n";
-        }
-        fwrite( $handle, $log_text );
-        // htmlspecialchars($log_text);
-        fclose( $handle );
-        //$this->clean_log_directory();
     }
 
     /**
@@ -149,9 +225,20 @@ class Logger {
             /*echo current_time('mysql')." [error] ".$exp_text;
               die("Connection closed\n");*/
         } else {
-            $this->log_v2( 'error', str_replace( "\n", "<br />", $exp_text ), [
-                'event' => 'exit',
-            ] );
+            // Honoring $write_in_log_file avoids log_v2 -> write_log -> exception_sse_friendly recursion
+            // (observed as memory exhaustion when the log directory cannot be created).
+            if ( $write_in_log_file ) {
+                $this->log_v2( 'error', str_replace( "\n", "<br />", $exp_text ), array(
+                    'event' => 'exit',
+                ) );
+            } elseif ( function_exists( 'error_log' ) ) {
+                // Route through the same centralized redaction as every other write path
+                // (write_log()/display_log__premium_only()) so this fallback branch can never
+                // leak a secret even if a future caller routes credential-bearing text through it.
+                $factory = new Factory();
+                $safe_exp_text = $factory->redactSecrets( $exp_text );
+                error_log( 'Auto-Install Free SSL: ' . (( function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $safe_exp_text ) : strip_tags( $safe_exp_text ) )) );
+            }
         }
     }
 
@@ -208,6 +295,9 @@ class Logger {
      * @return boolean
      */
     public function is_cli() {
+        if ( null !== $this->force_is_cli ) {
+            return (bool) $this->force_is_cli;
+        }
         if ( defined( 'STDIN' ) ) {
             return true;
         }

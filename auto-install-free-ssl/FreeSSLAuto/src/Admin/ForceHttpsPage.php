@@ -40,8 +40,10 @@ class ForceHttpsPage
     /**
      * Start up
      * Private constructor to prevent multiple instantiations @since 4.5.0
+     *
+     * @param bool $register_hooks Whether to register admin hooks (pass false in unit tests).
      */
-    private function __construct()
+    private function __construct($register_hooks = true)
     {
 	    if (!defined('ABSPATH')) {
 		    die( "Access denied" );
@@ -49,19 +51,36 @@ class ForceHttpsPage
 
         $this->factory =  new Factory();
 
-        add_action('admin_menu', array($this, 'force_https_page_menu' ));
+        if ($register_hooks) {
+            add_action('admin_menu', array($this, 'force_https_page_menu' ));
+        }
     }
 
 	/**
      * This method ensures that only one instance of the class is created.
      * @since 4.5.0
+	 * @param bool $register_hooks Whether to register hooks on first construction.
 	 * @return ForceHttpsPage
 	 */
-	public static function getInstance() {
+	public static function getInstance($register_hooks = true) {
 		if (!isset(self::$instance)) {
-			self::$instance = new self();
+			// When hooked to do_action( 'init' ) with accepted_args >= 1, WP may pass null.
+			if ( null === $register_hooks ) {
+				$register_hooks = true;
+			}
+			self::$instance = new self( (bool) $register_hooks );
 		}
 		return self::$instance;
+	}
+
+	/**
+	 * Inject a custom admin factory (used by unit tests).
+	 *
+	 * @param Factory $factory Factory instance.
+	 */
+	public function setFactory($factory)
+	{
+		$this->factory = $factory;
 	}
 
 
@@ -96,6 +115,18 @@ class ForceHttpsPage
 
 	    $override = isset($_GET['aifsaction']) && $_GET['aifsaction'] == "aifs_force_https_override" && isset($_GET['checked_ssl_manually']) && $_GET['checked_ssl_manually'] == "done" && isset($_GET['valid_ssl_installed']) && $_GET['valid_ssl_installed'] == "yes";
 	    if($override){
+		    // H-10: this manual troubleshooting override enabled Force HTTPS
+		    // (rewriting siteurl/home) from three fixed $_GET values with no nonce
+		    // at all -- a crafted link could CSRF any logged-in admin who opened it.
+		    // The existing nonce check at aifs_force_ssl_controller() only covers the
+		    // $_POST form path, not this GET override. current_user_can() is also
+		    // already enforced by add_submenu_page()'s 'manage_options' capability,
+		    // but is asserted again here for defence in depth / clarity.
+		    if ( ! current_user_can( 'manage_options' ) ) {
+			    wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
+		    }
+		    check_admin_referer( 'aifs_force_https_override', 'aifsoverridenonce' );
+
 		    $forcehttps->aifs_force_ssl_implement(1);
 	    }
 

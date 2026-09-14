@@ -48,13 +48,15 @@ class AdminNotice {
     /**
      * Start up
      * Private constructor to prevent multiple instantiations @since 4.5.0
+     *
+     * @param bool $register_hooks Whether to register admin hooks (pass false in unit tests).
      */
-    private function __construct() {
+    private function __construct( $register_hooks = true ) {
         if ( !defined( 'ABSPATH' ) ) {
             die( "Access denied" );
         }
         // Set class property
-        $this->options = ( get_option( 'basic_settings_auto_install_free_ssl' ) ? get_option( 'basic_settings_auto_install_free_ssl' ) : add_option( 'basic_settings_auto_install_free_ssl' ) );
+        $this->options = get_option( 'basic_settings_auto_install_free_ssl', array() );
         $this->factory = new Factory();
         /*
          * Review display option @since 1.1.0
@@ -98,12 +100,14 @@ class AdminNotice {
         				}
         			}
         		}*/
-        if ( is_admin() ) {
-            add_action( 'admin_notices', array($this, 'aifs_display_admin_notice') );
-        } else {
-            //add_action( 'init', array( $this, 'aifs_display_admin_notice' ) );//Send the email even if the frontend page loaded : Not working
+        if ( $register_hooks ) {
+            if ( is_admin() ) {
+                add_action( 'admin_notices', array($this, 'aifs_display_admin_notice') );
+            } else {
+                //add_action( 'init', array( $this, 'aifs_display_admin_notice' ) );//Send the email even if the frontend page loaded : Not working
+            }
+            add_action( 'admin_init', array($this, 'aifs_admin_notice_handler') );
         }
-        add_action( 'admin_init', array($this, 'aifs_admin_notice_handler') );
         /*
          * Announcement display option @since 2.2.2
          *
@@ -114,25 +118,42 @@ class AdminNotice {
         if ( !get_option( 'aifs_display_discount_offer_existing_users' ) ) {
             add_option( 'aifs_display_discount_offer_existing_users', 1 );
         }
-        $this->return_array_step1 = ( get_option( 'aifs_return_array_step1_manually' ) ? get_option( 'aifs_return_array_step1_manually' ) : add_option( 'aifs_return_array_step1_manually' ) );
+        $this->return_array_step1 = get_option( 'aifs_return_array_step1_manually', array() );
         if ( !defined( 'AIFS_COUNTDOWN_DURATION' ) ) {
             define( 'AIFS_COUNTDOWN_DURATION', 11.7 * 60 * 60 + 38 );
             // 74.1 h + 38 s
         }
+        // M-12: sanitize/escape REQUEST_URI at build time (defence in depth -- this
+        // value is echoed at multiple points below).
         $site_url = parse_url( get_site_url() );
-        $this->page_url = $site_url['scheme'] . "://" . $site_url['host'] . $_SERVER['REQUEST_URI'];
+        $request_uri = ( isset( $_SERVER['REQUEST_URI'] ) ? esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '' );
+        $this->page_url = $site_url['scheme'] . "://" . $site_url['host'] . $request_uri;
     }
 
     /**
      * This method ensures that only one instance of the class is created.
      * @since 4.5.0
+     * @param bool $register_hooks Whether to register admin hooks on first construction.
      * @return AdminNotice
      */
-    public static function getInstance() {
+    public static function getInstance( $register_hooks = true ) {
         if ( !isset( self::$instance ) ) {
-            self::$instance = new self();
+            // When hooked to do_action( 'init' ) with accepted_args >= 1, WP may pass null.
+            if ( null === $register_hooks ) {
+                $register_hooks = true;
+            }
+            self::$instance = new self((bool) $register_hooks);
         }
         return self::$instance;
+    }
+
+    /**
+     * Inject a custom admin factory (used by unit tests).
+     *
+     * @param Factory $factory Factory instance.
+     */
+    public function setFactory( $factory ) {
+        $this->factory = $factory;
     }
 
     /**
@@ -248,9 +269,9 @@ class AdminNotice {
 	                        </div>
 	                        <div style="margin-left: 8%; margin-top: -1%; margin-bottom: -2%;">
 	                        	' . $generate_ssl->regenerate_ssl_form( $renew_button_text, true ) . '
-	                        	<!-- <a class="aifs-review-now aifs-review-button" href="' . $renew_url . '">' . __( 'Renew SSL Now', 'auto-install-free-ssl' ) . '</a> -->
+	                        	<!-- <a class="aifs-review-now aifs-review-button" href="' . esc_url( $renew_url ) . '">' . __( 'Renew SSL Now', 'auto-install-free-ssl' ) . '</a> -->
 	                        	<span style="margin-left: 35%; position: relative; top: -25px;"><a class="aifs-review-now aifs-review-button" href="' . $upgrade_url . '" rel="nofollow">' . $upgrade_button_text . '</a></span>
-	                        	<span style="margin-left: 20%; position: relative; top: -25px;"><a class="aifs-review-button" href="' . $remind_later . '" rel="nofollow" onclick="return confirm(\'' . __( "Do you want to be reminded later to renew your SSL certificate?", 'auto-install-free-ssl' ) . '\')">' . __( "Remind later", 'auto-install-free-ssl' ) . '</a></span>
+	                        	<span style="margin-left: 20%; position: relative; top: -25px;"><a class="aifs-review-button" href="' . esc_url( $remind_later ) . '" rel="nofollow" onclick="return confirm(\'' . __( "Do you want to be reminded later to renew your SSL certificate?", 'auto-install-free-ssl' ) . '\')">' . __( "Remind later", 'auto-install-free-ssl' ) . '</a></span>
 	                      	</div>
 	                      </div>';
                 echo $html;
@@ -287,9 +308,9 @@ class AdminNotice {
                           <p>' . __( "Hey", 'auto-install-free-ssl' ) . ' ' . aifs_admin_first_name() . ', ' . $main_text . ' <br />~Anindya</p>
                         </div>
                         <a class="aifs-review-now aifs-review-button" href="https://wordpress.org/support/plugin/auto-install-free-ssl/reviews/?filter=5#new-post" target="_blank">' . __( "Click here to Review", 'auto-install-free-ssl' ) . '</a>
-                        <a class="aifs-review-button" href="' . $already_done . '" rel="nofollow" onclick="return confirm(\'Are you sure you have reviewed ' . AIFS_NAME . ' plugin?\')">' . __( "I have done", 'auto-install-free-ssl' ) . '</a>
-                        <a class="aifs-review-button" href="' . $already_done . '" rel="nofollow" onclick="return confirm(\'Are you sure you do NOT want to review ' . AIFS_NAME . ' plugin?\')">' . $dont_want_button . '</a>
-                        <a class="aifs-review-button" href="' . $remind_later . '" rel="nofollow" onclick="return confirm(\'Are you sure you need ' . AIFS_NAME . ' to remind you later?\')">' . __( "Remind me later", 'auto-install-free-ssl' ) . '</a>
+                        <a class="aifs-review-button" href="' . esc_url( $already_done ) . '" rel="nofollow" onclick="return confirm(\'Are you sure you have reviewed ' . AIFS_NAME . ' plugin?\')">' . __( "I have done", 'auto-install-free-ssl' ) . '</a>
+                        <a class="aifs-review-button" href="' . esc_url( $already_done ) . '" rel="nofollow" onclick="return confirm(\'Are you sure you do NOT want to review ' . AIFS_NAME . ' plugin?\')">' . $dont_want_button . '</a>
+                        <a class="aifs-review-button" href="' . esc_url( $remind_later ) . '" rel="nofollow" onclick="return confirm(\'Are you sure you need ' . AIFS_NAME . ' to remind you later?\')">' . __( "Remind me later", 'auto-install-free-ssl' ) . '</a>
                       </div>';
             echo $html;
         }
@@ -366,10 +387,10 @@ class AdminNotice {
             $html .= '<img class="aifs-notice-img-right" src="' . AIFS_URL . 'assets/img/icon.jpg" />
                     </div>
                     <a class="aifs-review-now aifs-review-button" href="' . $link . '">' . $link_text . '</a>
-                    <a class="aifs-review-button" href="' . $already_done . '" rel="nofollow" onclick="return confirm(\'' . $already_done_confirmation_text . '\')">' . $already_done_text . '</a>
-                    <a class="aifs-review-button" href="' . $already_done . '" rel="nofollow" onclick="return confirm(\'' . $dont_want_confirmation_text . '\')">' . $dont_want_text . '</a>';
+                    <a class="aifs-review-button" href="' . esc_url( $already_done ) . '" rel="nofollow" onclick="return confirm(\'' . $already_done_confirmation_text . '\')">' . $already_done_text . '</a>
+                    <a class="aifs-review-button" href="' . esc_url( $already_done ) . '" rel="nofollow" onclick="return confirm(\'' . $dont_want_confirmation_text . '\')">' . $dont_want_text . '</a>';
             /* translators: %s: Name of this plugin, i.e., 'Auto-Install Free SSL' */
-            $html .= '<a class="aifs-review-button" href="' . $remind_later . '" rel="nofollow" onclick="return confirm(\'' . sprintf( __( "Do you need %s to remind you later?", 'auto-install-free-ssl' ), AIFS_NAME ) . '\')">';
+            $html .= '<a class="aifs-review-button" href="' . esc_url( $remind_later ) . '" rel="nofollow" onclick="return confirm(\'' . sprintf( __( "Do you need %s to remind you later?", 'auto-install-free-ssl' ), AIFS_NAME ) . '\')">';
             $html .= __( "Remind me later", 'auto-install-free-ssl' ) . '</a>                                      
                     </div>';
             echo $html;
@@ -437,10 +458,10 @@ class AdminNotice {
                 $html .= '<img class="aifs-notice-img-right" src="' . AIFS_URL . 'assets/img/icon.jpg" />
 		                    </div>';
                 $html .= '<a class="aifs-review-now aifs-review-button" href="' . $link . '"' . (( aifs_is_free_version() ? '' : ' target="_blank"' )) . '>' . $link_text . '</a>';
-                $html .= '<a class="aifs-review-button" href="' . $already_done . '" rel="nofollow" onclick="return confirm(\'' . $already_done_confirmation_text . '\')">' . $already_done_text . '</a>
-		                    <a class="aifs-review-button" href="' . $already_done . '" rel="nofollow" onclick="return confirm(\'' . $dont_want_confirmation_text . '\')">' . $dont_want_text . '</a>';
+                $html .= '<a class="aifs-review-button" href="' . esc_url( $already_done ) . '" rel="nofollow" onclick="return confirm(\'' . $already_done_confirmation_text . '\')">' . $already_done_text . '</a>
+		                    <a class="aifs-review-button" href="' . esc_url( $already_done ) . '" rel="nofollow" onclick="return confirm(\'' . $dont_want_confirmation_text . '\')">' . $dont_want_text . '</a>';
                 /* translators: %s: Name of this plugin, i.e., 'Auto-Install Free SSL' */
-                $html .= '<a class="aifs-review-button" href="' . $remind_later . '" rel="nofollow" onclick="return confirm(\'' . sprintf( __( "Do you need %s to remind you later?", 'auto-install-free-ssl' ), AIFS_NAME ) . '\')">';
+                $html .= '<a class="aifs-review-button" href="' . esc_url( $remind_later ) . '" rel="nofollow" onclick="return confirm(\'' . sprintf( __( "Do you need %s to remind you later?", 'auto-install-free-ssl' ), AIFS_NAME ) . '\')">';
                 $html .= __( "Remind me later", 'auto-install-free-ssl' ) . '</a>                                      
 		                    </div>';
                 echo $html;
@@ -462,8 +483,9 @@ class AdminNotice {
                 wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
             }
             update_option( 'aifs_display_review', 0 );
-            wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsrated'] ) );
-            exit;
+            if ( wp_safe_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsrated'] ) ) ) {
+                exit;
+            }
         } else {
             if ( isset( $_GET['aifslater'] ) ) {
                 if ( !wp_verify_nonce( $_GET['aifslater'], 'aifs_review_later' ) ) {
@@ -471,8 +493,9 @@ class AdminNotice {
                 }
                 update_option( 'aifs_display_review', 5 );
                 wp_schedule_single_event( strtotime( "+5 days", time() ), 'aifs_display_review_init' );
-                wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifslater'] ) );
-                exit;
+                if ( wp_safe_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifslater'] ) ) ) {
+                    exit;
+                }
             }
         }
         //Announcement
@@ -481,8 +504,9 @@ class AdminNotice {
                 wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
             }
             update_option( 'aifs_display_free_premium_offer', 0 );
-            wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsannouncementdone'] ) );
-            exit;
+            if ( wp_safe_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsannouncementdone'] ) ) ) {
+                exit;
+            }
         } else {
             if ( isset( $_GET['aifsannouncementlater'] ) ) {
                 if ( !wp_verify_nonce( $_GET['aifsannouncementlater'], 'aifs_announcement_read_later' ) ) {
@@ -490,8 +514,9 @@ class AdminNotice {
                 }
                 update_option( 'aifs_display_free_premium_offer', 5 );
                 wp_schedule_single_event( strtotime( "+3 days", time() ), 'aifs_display_announcement_init' );
-                wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsannouncementlater'] ) );
-                exit;
+                if ( wp_safe_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsannouncementlater'] ) ) ) {
+                    exit;
+                }
             }
         }
         //SSL Renewal reminder
@@ -500,8 +525,9 @@ class AdminNotice {
                 wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
             }
             update_option( 'aifs_renew_ssl_later_requested_timestamp', time() );
-            wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsrenewssllater'] ) );
-            exit;
+            if ( wp_safe_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsrenewssllater'] ) ) ) {
+                exit;
+            }
         }
         //Discount offer to existing users
         if ( isset( $_GET['aifsdiscountofferdone'] ) ) {
@@ -509,8 +535,9 @@ class AdminNotice {
                 wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
             }
             update_option( 'aifs_display_discount_offer_existing_users', 0 );
-            wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsdiscountofferdone'] ) );
-            exit;
+            if ( wp_safe_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsdiscountofferdone'] ) ) ) {
+                exit;
+            }
         } else {
             if ( isset( $_GET['aifsdiscountofferlater'] ) ) {
                 if ( !wp_verify_nonce( $_GET['aifsdiscountofferlater'], 'aifs_discount_offer_read_later' ) ) {
@@ -518,8 +545,9 @@ class AdminNotice {
                 }
                 update_option( 'aifs_display_discount_offer_existing_users', 5 );
                 wp_schedule_single_event( strtotime( "+3 days", time() ), 'aifs_display_discount_offer_init' );
-                wp_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsdiscountofferlater'] ) );
-                exit;
+                if ( wp_safe_redirect( $this->factory->aifs_remove_parameters_from_url( $this->page_url, ['aifsdiscountofferlater'] ) ) ) {
+                    exit;
+                }
             }
         }
     }

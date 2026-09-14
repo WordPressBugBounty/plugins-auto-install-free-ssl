@@ -59,8 +59,10 @@ class GenerateSSLmanually
 	/**
      * Start up
      * Private constructor to prevent multiple instantiations @since 4.5.0
+     *
+     * @param bool $register_hooks Whether to register admin hooks (pass false in unit tests).
      */
-    private function __construct()
+    private function __construct($register_hooks = true)
     {
 	    if (!defined('ABSPATH')) {
 		    die( "Access denied" );
@@ -73,10 +75,10 @@ class GenerateSSLmanually
 
         $this->plan_selected = get_option('aifs_plan_selected');
 
-        $this->options = get_option('aifs_generate_ssl_manually') ? get_option('aifs_generate_ssl_manually') : add_option('aifs_generate_ssl_manually');
+        $this->options = get_option('aifs_generate_ssl_manually', array());
         
         //hook if the user selected free plan
-        if (aifs_is_free_version()) {
+        if ($register_hooks && aifs_is_free_version()) {
             add_action('admin_menu', array( $this, 'add_generate_ssl_manually_menu' ));
             add_action('admin_init', array( $this, 'generate_ssl_manually_page_init' ));
 	        add_action( 'admin_init', array( $this, 'download_http01_challenge_file_handler' ) );
@@ -91,26 +93,72 @@ class GenerateSSLmanually
 	    $this->save_button_text = __("Next Step", 'auto-install-free-ssl');
 
 	    //$date = new \DateTime();
-	    $this->return_array_step1 = get_option('aifs_return_array_step1_manually') ? get_option('aifs_return_array_step1_manually') : add_option('aifs_return_array_step1_manually');
+	    $this->return_array_step1 = get_option('aifs_return_array_step1_manually', array());
 
 	    /*if(is_array($this->return_array_step1) && ($date->getTimestamp() >= strtotime($this->return_array_step1['response']['expires'])) && (!isset($this->return_array_step1['ssl_cert_generated']) || !$this->return_array_step1['ssl_cert_generated'])){
 		    //reset option 
 	        unset($this->return_array_step1);
 		    update_option( 'aifs_return_array_step1_manually', $this->return_array_step1 );
-		    wp_redirect(menu_page_url('aifs_generate_ssl_manually'), 301);
+		    if ( wp_safe_redirect(menu_page_url('aifs_generate_ssl_manually'), 301) ) {
+		    	exit;
+		    }
 	    }*/
     }
 
 	/**
 	 * This method ensures that only one instance of the class is created.
 	 * @since 4.5.0
+	 * @param bool $register_hooks Whether to register hooks on first construction.
 	 * @return GenerateSSLmanually
 	 */
-	public static function getInstance() {
+	public static function getInstance($register_hooks = true) {
 		if (!isset(self::$instance)) {
-			self::$instance = new self();
+			// When hooked to do_action( 'init' ) with accepted_args >= 1, WP may pass null.
+			if ( null === $register_hooks ) {
+				$register_hooks = true;
+			}
+			self::$instance = new self( (bool) $register_hooks );
 		}
 		return self::$instance;
+	}
+
+	/**
+	 * Inject a custom logger (used by unit tests).
+	 *
+	 * @param Logger $logger Logger instance.
+	 */
+	public function setLogger($logger)
+	{
+		$this->logger = $logger;
+	}
+
+	/**
+	 * Inject a custom admin factory (used by unit tests).
+	 *
+	 * @param Factory $factory Factory instance.
+	 */
+	public function setFactory($factory)
+	{
+		$this->factory = $factory;
+	}
+
+	/**
+	 * Read and sanitize the challenge type posted by the manual SSL form.
+	 *
+	 * @return string Empty string, http-01, or dns-01.
+	 */
+	public function getPostedChallengeType()
+	{
+		if ( ! isset( $_POST['aifs_challenge_type'] ) ) {
+			return '';
+		}
+
+		$candidate = sanitize_text_field( wp_unslash( $_POST['aifs_challenge_type'] ) );
+		if ( 'http-01' === $candidate || 'dns-01' === $candidate ) {
+			return $candidate;
+		}
+
+		return '';
 	}
     
     /**
@@ -127,14 +175,35 @@ class GenerateSSLmanually
      */
     public function create_generate_ssl_manually_admin_page()
     {
+	    if ( ! current_user_can( 'manage_options' ) ) {
+		    wp_die( __( "You do not have sufficient permissions to access this page.", 'auto-install-free-ssl' ) );
+	    }
+
+	    // Soft-fail when OpenSSL / cURL / PHP / WP requirements are unmet (menus stay registered).
+	    if ( function_exists( 'aifs_get_environment_errors' ) && ! empty( aifs_get_environment_errors() ) ) {
+		    echo aifs_header();
+		    echo '<div class="wrap" style="margin-top: 1em;"><p>';
+		    echo esc_html__( 'SSL generation is unavailable until the server environment requirements above are met. You can still use Force HTTPS if a certificate is already installed.', 'auto-install-free-ssl' );
+		    echo '</p><p><a class="button button-primary" href="' . esc_url( admin_url( 'admin.php?page=aifs_force_https' ) ) . '">';
+		    echo esc_html__( 'Force HTTPS', 'auto-install-free-ssl' );
+		    echo '</a></p></div>';
+		    echo aifs_powered_by();
+		    return;
+	    }
+
 	    $date = new DateTime();
 
-	    if(is_array($this->return_array_step1) && ($date->getTimestamp() >= strtotime($this->return_array_step1['response']['expires'])) && (!isset($this->return_array_step1['ssl_cert_generated']) || !$this->return_array_step1['ssl_cert_generated'])){
+	    // H-12 follow-up: $this->return_array_step1 now defaults to array() (rather
+	    // than a stray true/false from add_option()'s return value), so the
+	    // is_array() check alone no longer protects the ['response']['expires']
+	    // read on a fresh install -- guard it explicitly.
+	    if(is_array($this->return_array_step1) && isset($this->return_array_step1['response']['expires']) && ($date->getTimestamp() >= strtotime($this->return_array_step1['response']['expires'])) && (!isset($this->return_array_step1['ssl_cert_generated']) || !$this->return_array_step1['ssl_cert_generated'])){
 		    //reset option
 		    unset($this->return_array_step1);
 		    update_option( 'aifs_return_array_step1_manually', $this->return_array_step1 );
-		    wp_redirect(menu_page_url('aifs_generate_ssl_manually'), 301);
-		    exit;
+		    if ( wp_safe_redirect(menu_page_url('aifs_generate_ssl_manually'), 301) ) {
+		    	exit;
+		    }
 	    }
 
 	    $tos = false;
@@ -300,13 +369,13 @@ class GenerateSSLmanually
 	                    echo '</form>';
                     }
 
-                    if($this->generate_ssl_all_domains_verified_already() || isset( $_POST['aifs_challenge_type']) || (is_array($this->return_array_step1) && $this->return_array_step1['current_step_number'] == 3))
+                    if($this->generate_ssl_all_domains_verified_already() || isset( $_POST['aifs_challenge_type']) || (is_array($this->return_array_step1) && isset($this->return_array_step1['current_step_number']) && $this->return_array_step1['current_step_number'] == 3))
                     {
 	                    $aifs_current_step_number = 3;
 	                    //Call Step 3
 	                    $this->generate_ssl_step_3();
                     }
-                    elseif($tos || (is_array($this->return_array_step1) && $this->return_array_step1['current_step_number'] == 2))
+                    elseif($tos || (is_array($this->return_array_step1) && isset($this->return_array_step1['current_step_number']) && $this->return_array_step1['current_step_number'] == 2))
                     {
 	                    $aifs_current_step_number = 2;
 	                    //Call Step 2
@@ -420,7 +489,7 @@ class GenerateSSLmanually
         $number_of_ssl_generated = get_option('aifs_number_of_ssl_generated');
         //$style = "";
 
-		if($number_of_ssl_generated == 0 && (!is_array($this->return_array_step1) || $this->return_array_step1['current_step_number'] == 1)){
+		if($number_of_ssl_generated == 0 && (!is_array($this->return_array_step1) || !isset($this->return_array_step1['current_step_number']) || $this->return_array_step1['current_step_number'] == 1)){
 		    return; //don't display promotion for first time usage if step is 1
 		}
 
@@ -428,7 +497,7 @@ class GenerateSSLmanually
             $generated_ssl = $this->factory->get_generated_ssl_details();
 
             //Assuming User will install the generated SSL in 2 days (if Cloudflare)
-            if(is_array($this->return_array_step1) && $this->return_array_step1['current_step_number'] == 3 && !get_option('aifs_is_generated_ssl_installed')){
+            if(is_array($this->return_array_step1) && isset($this->return_array_step1['current_step_number']) && $this->return_array_step1['current_step_number'] == 3 && !get_option('aifs_is_generated_ssl_installed')){
                 //$text = __( "Facing difficulties installing the SSL certificate? Try Premium Version, and the plugin will generate & install SSL automatically!", 'auto-install-free-ssl' );
                 $text = __( "Facing difficulties installing the SSL certificate?", 'auto-install-free-ssl' );
                 $banner_heading = __( "Our Premium plugin automatically Installs the SSL certificate", 'auto-install-free-ssl' );
@@ -465,7 +534,7 @@ class GenerateSSLmanually
         }
 
         //@since 3.6.6 display the following text in renewal too, if the step is 2
-        if(is_array($this->return_array_step1) && $this->return_array_step1['current_step_number'] == 2){
+        if(is_array($this->return_array_step1) && isset($this->return_array_step1['current_step_number']) && $this->return_array_step1['current_step_number'] == 2){
             //$text = __( "Facing difficulties verifying domain ownership and generating a free SSL certificate? Try Premium Version; the plugin will do it automatically & install the SSL!", 'auto-install-free-ssl' );
             $text = __( "Facing difficulties verifying domain ownership and generating a free SSL certificate?", 'auto-install-free-ssl' );
             $banner_heading = __( "Our Premium plugin automatically Verifies Domain Ownership", 'auto-install-free-ssl' );
@@ -767,6 +836,12 @@ class GenerateSSLmanually
 
 	    if(isset($input['admin_email'])){
 	        $basic_settings = get_option('basic_settings_auto_install_free_ssl');
+		    // M-13: get_option() returns false on a fresh install; auto-vivifying an
+		    // offset on false warns on PHP 8.1+ and would overwrite the option with
+		    // an array containing only 'admin_email'. Start from an array instead.
+		    if (!is_array($basic_settings)) {
+			    $basic_settings = array();
+		    }
 		    $basic_settings['admin_email'][0] = sanitize_email($input['admin_email']);
 		    update_option('basic_settings_auto_install_free_ssl', $basic_settings);
 
@@ -863,7 +938,7 @@ class GenerateSSLmanually
 
 		printf(
 			'<input type="email" id="admin_email" name="aifs_generate_ssl_manually[admin_email]" required="required" value="%s" style="width: 300px;" />',
-			$admin_email
+			esc_attr( $admin_email )
 		);
 	}
 
@@ -904,7 +979,7 @@ class GenerateSSLmanually
 				$this->appConfig['admin_email'] = [get_option('admin_email')];
 			}*/
 
-			$freessl = new AcmeV2( $homedir . AIFS_DS . $this->appConfig['certificate_directory'], $this->appConfig['admin_email'], $this->appConfig['is_staging'], $this->appConfig['dns_provider'], $this->appConfig['key_size'], $cPanel, $this->appConfig['server_ip'] );
+			$freessl = new AcmeV2( $homedir . AIFS_DS . $this->appConfig['certificate_directory'], $this->appConfig['admin_email'], $this->appConfig['is_staging'], $this->appConfig['dns_provider'], $this->appConfig['key_size'], $cPanel, $this->appConfig['server_ip'], $this->getPostedChallengeType() );
 
 			if ( count( $domains_array ) > 0 ) {
 				//Start the process to generate SSL
@@ -941,8 +1016,11 @@ class GenerateSSLmanually
 
 						aifs_add_flash_notice($error_text, "error");
 						$redirect_url = admin_url('admin.php?page=aifs_generate_ssl_manually');
-						wp_redirect($redirect_url);
-						exit;
+						if ( wp_safe_redirect($redirect_url) ) {
+							exit;
+						}
+						// Redirect cancelled (e.g. tests) or failed — do not advance to step 2.
+						return;
 					}
 
 					$return_array_step1['domains_array'] = $domains_array;
@@ -1179,14 +1257,52 @@ class GenerateSSLmanually
 		$acmeFactory = new AcmeFactory($this->appConfig['homedir'].'/'.$this->appConfig['certificate_directory'], $this->appConfig['acme_version'], $this->appConfig['is_staging']);
 
 		if ( isset( $_GET['aifschallengehttp'] ) ) {
+			// C-4: this handler was guarded only by a nonce -- no capability check --
+			// and passed unsanitized $_GET['domain'] straight into getDomainPath(),
+			// then mkdir()/file_put_contents() on the result. Require manage_options
+			// first, matching create_generate_ssl_manually_admin_page() above.
+			if ( ! current_user_can( 'manage_options' ) ) {
+				wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
+			}
+
 			if ( !wp_verify_nonce( $_GET['aifschallengehttp'], 'aifs_challenge_http' ) ) {
 				wp_die( "Access denied" );
 			}
 
-            $domain = $_GET['domain'];
-			$file_name = $this->return_array_step1['domain_data'][$domain]['http-01']['file_name'];
-			$file_content = $this->return_array_step1['domain_data'][$domain]['http-01']['payload'];
+            $domain = isset( $_GET['domain'] ) ? wp_unslash( $_GET['domain'] ) : '';
 			$domain_path = $acmeFactory->getDomainPath($domain);
+
+			// getDomainPath() now rejects traversal/invalid domain shapes and
+			// returns false in that case (relies on the hardened Acme\Factory
+			// implementation -- see Batch 2 / C-3).
+			if ( false === $domain_path ) {
+				wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
+			}
+
+			// Defence in depth: the resolved domain path must actually live inside
+			// the certificates directory before we mkdir()/file_put_contents() into
+			// it. getDomainPath() already validated $domain has no path separators
+			// or traversal sequences (Batch 2 / C-3), so $domain_path is guaranteed
+			// to be a direct child of the certificates directory -- a string-prefix
+			// check is used (rather than realpath()) because the domain directory
+			// may not exist on disk yet at this point.
+			$certificates_dir_prefix = rtrim( $acmeFactory->getCertificatesDir(), AIFS_DS ) . AIFS_DS;
+
+			if ( 0 !== strpos( $domain_path, $certificates_dir_prefix ) ) {
+				wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
+			}
+
+			$file_name = isset( $this->return_array_step1['domain_data'][$domain]['http-01']['file_name'] )
+				? $this->return_array_step1['domain_data'][$domain]['http-01']['file_name']
+				: '';
+			$file_content = isset( $this->return_array_step1['domain_data'][$domain]['http-01']['payload'] )
+				? $this->return_array_step1['domain_data'][$domain]['http-01']['payload']
+				: '';
+
+			if ( '' === $file_name ) {
+				wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
+			}
+
 			$file_path = $domain_path . AIFS_DS . $file_name;
 
 			if (!is_dir($domain_path)) {
@@ -1195,8 +1311,12 @@ class GenerateSSLmanually
 
 			file_put_contents($file_path, $file_content);
 
+			// Computed after mkdir() above so the directory (and therefore its
+			// realpath()) actually exists.
+			$real_certificates_dir = realpath( $acmeFactory->getCertificatesDir() );
+
 			$factory = new Factory();
-			$factory->download_file($file_path, $file_name, true);
+			$factory->download_file($file_path, $file_name, true, $real_certificates_dir);
 
 		}
 
@@ -1246,7 +1366,8 @@ class GenerateSSLmanually
 			    $cPanel  = [
 				    'is_cpanel' => false
 			    ];
-			    $freessl = new AcmeV2( $homedir . AIFS_DS . $this->appConfig['certificate_directory'], $this->appConfig['admin_email'], $this->appConfig['is_staging'], $this->appConfig['dns_provider'], $this->appConfig['key_size'], $cPanel, $this->appConfig['server_ip'] );
+			    $challenge_type = $this->getPostedChallengeType();
+			    $freessl = new AcmeV2( $homedir . AIFS_DS . $this->appConfig['certificate_directory'], $this->appConfig['admin_email'], $this->appConfig['is_staging'], $this->appConfig['dns_provider'], $this->appConfig['key_size'], $cPanel, $this->appConfig['server_ip'], $challenge_type );
 
 			    $number_of_validated_domains_internal = 0;
 			    $number_of_validated_domains = 0;
@@ -1262,7 +1383,7 @@ class GenerateSSLmanually
 				        /*
 				         * Run internal check here
 				         */
-				        if($_POST['aifs_challenge_type'] == "http-01"){
+				        if($challenge_type == "http-01"){
 
                             if ( $freessl->verifyDomainOwnershipHttp01Internal( $domain, $value ) ) {
                                 ++ $number_of_validated_domains_internal;
@@ -1282,7 +1403,7 @@ class GenerateSSLmanually
 
 				        }
 
-				        if($_POST['aifs_challenge_type'] == "dns-01"){
+				        if($challenge_type == "dns-01"){
 				            if($freessl->verifyDomainOwnershipDns01Internal($domain, $value, false)) {
 					            ++ $number_of_validated_domains_internal;
 				            }
@@ -1304,12 +1425,13 @@ class GenerateSSLmanually
 			    }
 
 
-                if(\count( $this->return_array_step1['response']['authorizations'] ) === $number_of_validated_domains_internal ) {
+                $authorizations_count = isset( $this->return_array_step1['response']['authorizations'] ) ? \count( $this->return_array_step1['response']['authorizations'] ) : 0;
+                if ( $authorizations_count > 0 && $authorizations_count === $number_of_validated_domains_internal ) {
                     foreach ( $this->return_array_step1['domain_data'] as $domain => $value ) {
                         if($value['verified']){
 	                        ++ $number_of_validated_domains;
                         }
-                        else if ($freessl->step2VerifyDomainOwnership( $domain, $value, $_POST['aifs_challenge_type'], $this->return_array_step1 ) ) {
+                        else if ($freessl->step2VerifyDomainOwnership( $domain, $value, $challenge_type, $this->return_array_step1 ) ) {
                             ++ $number_of_validated_domains;
                         }
                         else{
@@ -1347,13 +1469,16 @@ class GenerateSSLmanually
 	                /*if($_POST['aifs_challenge_type'] == "dns-01"){
 		                $redirect_url .= '&tab='.$_POST['aifs_challenge_type'];
 	                }*/
-	                wp_redirect($redirect_url);
-	                exit;
+	                if ( wp_safe_redirect($redirect_url) ) {
+	                	exit;
+	                }
+	                return;
                 }
 
 
 			    //Proceed to issue SSL only if total number of domains = total number of validated domains
-			    if ( \count( $this->return_array_step1['response']['authorizations'] ) === $number_of_validated_domains ) {
+			    $authorizations_count = isset( $this->return_array_step1['response']['authorizations'] ) ? \count( $this->return_array_step1['response']['authorizations'] ) : 0;
+			    if ( $authorizations_count > 0 && $authorizations_count === $number_of_validated_domains ) {
 				    // requesting certificate
 
 				    if ( $freessl->step3GenerateSSL( $this->return_array_step1['domains_array'], false, $this->return_array_step1 ) ) {
@@ -1394,19 +1519,23 @@ class GenerateSSLmanually
 					    /*if($_POST['aifs_challenge_type'] == "dns-01"){
 						    $redirect_url .= '&tab='.$_POST['aifs_challenge_type'];
 					    }*/
-					    wp_redirect($redirect_url);
-					    exit;
+					    if ( wp_safe_redirect($redirect_url) ) {
+					    	exit;
+					    }
+					    return;
 				    }
 
 			    } else {
 				    //SSL certificate can't be issued
 				    echo $this->progress_bar(3);
 
-				    /* translators: %1$d: A number; %2$d: Another number; %3$s: A domain name, e.g., example.com */
-				    $text = sprintf(__('The number of authorizations: %1$d. But the number of validated domains: %2$d. Sorry, the SSL certificate can not be issued to %3$s.', 'auto-install-free-ssl'), count( $this->return_array_step1['response']['authorizations'] ), $number_of_validated_domains, $this->return_array_step1['domains_array'][0]) . " ";
-				    $text_for_log = sprintf('The number of authorizations: %1$d. But the number of validated domains: %2$d. Sorry, the SSL certificate can not be issued to %3$s.', count( $this->return_array_step1['response']['authorizations'] ), $number_of_validated_domains, $this->return_array_step1['domains_array'][0]) . " "; //since 3.6.1, Don't translate this error message.
+				    $authorizations_count_for_msg = isset( $this->return_array_step1['response']['authorizations'] ) ? \count( $this->return_array_step1['response']['authorizations'] ) : 0;
 
-				    $difference = \count( $this->return_array_step1['response']['authorizations'] ) - $number_of_validated_domains;
+				    /* translators: %1$d: A number; %2$d: Another number; %3$s: A domain name, e.g., example.com */
+				    $text = sprintf(__('The number of authorizations: %1$d. But the number of validated domains: %2$d. Sorry, the SSL certificate can not be issued to %3$s.', 'auto-install-free-ssl'), $authorizations_count_for_msg, $number_of_validated_domains, $this->return_array_step1['domains_array'][0]) . " ";
+				    $text_for_log = sprintf('The number of authorizations: %1$d. But the number of validated domains: %2$d. Sorry, the SSL certificate can not be issued to %3$s.', $authorizations_count_for_msg, $number_of_validated_domains, $this->return_array_step1['domains_array'][0]) . " "; //since 3.6.1, Don't translate this error message.
+
+				    $difference = $authorizations_count_for_msg - $number_of_validated_domains;
 
 				    if($difference > 1){
 					    /* translators: %d: A plural number */
@@ -1435,8 +1564,10 @@ class GenerateSSLmanually
 				    /*if($_POST['aifs_challenge_type'] == "dns-01"){
 					    $redirect_url .= '&tab='.$_POST['aifs_challenge_type'];
 				    }*/
-				    wp_redirect($redirect_url);
-				    exit;
+				    if ( wp_safe_redirect($redirect_url) ) {
+				    	exit;
+				    }
+				    return;
 			    }
 
 		    }
@@ -1455,8 +1586,9 @@ class GenerateSSLmanually
 				update_option( 'aifs_return_array_step1_manually', "" ); // @since 4.5.0, as $this->return_array_step1 is Undefined
 		        //update_option( 'aifs_return_array_step1_manually', $this->return_array_step1 );
 				//delete_option( 'aifs_is_generated_ssl_installed' ); //Moved to step3GenerateSSL() in AcmeV2.php
-		        wp_redirect(menu_page_url('aifs_generate_ssl_manually'), 301);
-		        exit;
+		        if ( wp_safe_redirect(menu_page_url('aifs_generate_ssl_manually'), 301) ) {
+		        	exit;
+		        }
 	        }
         }
 	}
@@ -1548,7 +1680,8 @@ class GenerateSSLmanually
 			}
 
 			//return true only if total number of domains = total number of validated domains
-			if ( \count( $this->return_array_step1['response']['authorizations'] ) === $number_of_validated_domains ) {
+			$authorizations_count = \count( $this->return_array_step1['response']['authorizations'] );
+			if ( $authorizations_count > 0 && $authorizations_count === $number_of_validated_domains ) {
 				return true;
 			} else {
 				return false;

@@ -42,8 +42,10 @@ class Log
 	/**
      * Start up
      * Private constructor to prevent multiple instantiations @since 4.5.0
+     *
+     * @param bool $register_hooks Whether to register admin hooks (pass false in unit tests).
      */
-	private function __construct()
+	private function __construct($register_hooks = true)
     {
 	    if (!defined('ABSPATH')) {
 		    die( "Access denied" );
@@ -51,22 +53,39 @@ class Log
         
         $this->factory =  new Factory();
 
-        add_action('admin_menu', array($this, 'log_page_menu'));
+        if ($register_hooks) {
+            add_action('admin_menu', array($this, 'log_page_menu'));
+        }
 
 	    $site_url = parse_url( get_site_url() );
-	    $this->page_url = $site_url['scheme'] . "://" . $site_url['host'] . $_SERVER['REQUEST_URI'];
+	    $this->page_url = $site_url['scheme'] . "://" . $site_url['host'] . ( isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '' );
     }
 
 	/**
      * This method ensures that only one instance of the class is created.
 	 * @since 4.5.0
+	 * @param bool $register_hooks Whether to register hooks on first construction.
 	 * @return Log
 	 */
-	public static function getInstance() {
+	public static function getInstance($register_hooks = true) {
 		if (!isset(self::$instance)) {
-			self::$instance = new self();
+			// When hooked to do_action( 'init' ) with accepted_args >= 1, WP may pass null.
+			if ( null === $register_hooks ) {
+				$register_hooks = true;
+			}
+			self::$instance = new self( (bool) $register_hooks );
 		}
 		return self::$instance;
+	}
+
+	/**
+	 * Inject a custom admin factory (used by unit tests).
+	 *
+	 * @param Factory $factory Factory instance.
+	 */
+	public function setFactory($factory)
+	{
+		$this->factory = $factory;
 	}
     
     
@@ -148,8 +167,16 @@ class Log
                                             echo __( "Access denied", 'auto-install-free-ssl' );
                                         }
                                         else {
-                                            $log_directory = AIFS_UPLOAD_DIR . AIFS_DS . 'log' . AIFS_DS;
-                                            $file_path = $log_directory . trim($_GET['date']) . '.log';
+                                            // H-8: $_GET['date'] used to be concatenated into the log
+                                            // path with no validation at all, allowing directory
+                                            // traversal (e.g. ../../../../wp-config.php). Require a
+                                            // strict YYYY-MM-DD shape and basename() defensively.
+                                            $requested_date = isset( $_GET['date'] ) ? trim( wp_unslash( $_GET['date'] ) ) : '';
+
+                                            if ( 1 === preg_match( '/^\d{4}-\d{2}-\d{2}$/', $requested_date ) ) {
+                                                $log_directory = AIFS_UPLOAD_DIR . AIFS_DS . 'log' . AIFS_DS;
+                                                $file_path = $log_directory . basename( $requested_date ) . '.log';
+                                            }
                                         }
                                     }
                                     else{
@@ -157,9 +184,21 @@ class Log
                                     }
 
                                     if(count($files) > 0 && isset( $file_path ) && is_file( $file_path )) {
-                                        $text = str_replace( "\n", "<br />", file_get_contents( $file_path ) );
-	                                    $text = str_replace( "<pre>", "<pre><code>", $text );
-	                                    echo str_replace( "</pre>", "</code></pre>", $text );
+                                        // H-9: escape the raw log body BEFORE any of the
+                                        // display-formatting substitutions below. write_log()
+                                        // already runs content through wp_kses_post() before
+                                        // writing it, but display_log__premium_only() (the live
+                                        // SSE stream) does not, and neither covered a file
+                                        // reached via the (now-fixed) H-8 traversal -- esc_html()
+                                        // here is the last line of defence regardless of how the
+                                        // file's content got there.
+                                        $text = esc_html( file_get_contents( $file_path ) );
+                                        $text = str_replace( "\n", "<br />", $text );
+	                                    // Match against the now-escaped "<pre>"/"</pre>" markers
+	                                    // (kses-allowed tags that write_log() may have preserved)
+	                                    // so the existing code-block presentation still works.
+	                                    $text = str_replace( "&lt;pre&gt;", "<pre><code>", $text );
+	                                    echo str_replace( "&lt;/pre&gt;", "</code></pre>", $text );
                                     }
                                     else{
                                         echo "<br /><em>" . __( "No log is available.", 'auto-install-free-ssl' ) . "</em>";
@@ -204,15 +243,18 @@ class Log
 
 
 	/**
-	 * Sets value of the option aifs_delete_plugin_data_on_deactivation as per the request
+	 * Sets value of the option aifs_delete_plugin_data_on_deactivation as per the request.
+	 * UI that links here is currently disabled; method kept for redirects/tests.
 	 */
-    /*public function plugin_data_handler(){
+    public function plugin_data_handler(){
 	    if ( isset( $_GET['aifsdeleteplugindata'] ) ) {
 		    if ( !wp_verify_nonce( $_GET['aifsdeleteplugindata'], 'aifs_delete_data_on_deactivate' ) ) {
 			    wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
 		    }
 		    update_option( 'aifs_delete_plugin_data_on_deactivation', 1);
-		    wp_redirect($this->factory->aifs_remove_parameters_from_url($this->page_url, ['aifsdeleteplugindata']));
+		    if ( wp_safe_redirect($this->factory->aifs_remove_parameters_from_url($this->page_url, ['aifsdeleteplugindata'])) ) {
+		    	exit;
+		    }
 
 		    //Display success message
 		    aifs_add_flash_notice( __("Settings successfully updated! We'll DELETE the plugin data on deactivation.", 'auto-install-free-ssl'));
@@ -222,11 +264,13 @@ class Log
 				    wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
 			    }
 			    update_option( 'aifs_delete_plugin_data_on_deactivation', 0);
-			    wp_redirect($this->factory->aifs_remove_parameters_from_url($this->page_url, ['aifskeepplugindataintact']));
+			    if ( wp_safe_redirect($this->factory->aifs_remove_parameters_from_url($this->page_url, ['aifskeepplugindataintact'])) ) {
+			    	exit;
+			    }
 
 			    //Display success message
 		        aifs_add_flash_notice( __("Settings successfully updated! We'll keep the plugin data INTACT on deactivation.", 'auto-install-free-ssl'));
 	    }	    
-    }*/
+    }
 
 }

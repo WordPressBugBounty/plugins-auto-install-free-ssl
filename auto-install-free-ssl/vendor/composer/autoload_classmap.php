@@ -40,6 +40,7 @@ return array(
     'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\cPanelSettings' => $baseDir . '/FreeSSLAuto/src/Premium/Admin/cPanelSettings.php',
     'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\DnsApi' => $baseDir . '/FreeSSLAuto/src/Premium/DnsApi/DnsApi.php',
     'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\DnsCurl' => $baseDir . '/FreeSSLAuto/src/Premium/DnsApi/DnsCurl.php',
+    'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\DnsCurlBuilderTrait' => $baseDir . '/FreeSSLAuto/src/Premium/DnsApi/DnsCurlBuilderTrait.php',
     'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\cloudflare' => $baseDir . '/FreeSSLAuto/src/Premium/DnsApi/cloudflare.php',
     'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\godaddy' => $baseDir . '/FreeSSLAuto/src/Premium/DnsApi/godaddy.php',
     'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\namecheap' => $baseDir . '/FreeSSLAuto/src/Premium/DnsApi/namecheap.php',

@@ -42,15 +42,37 @@ class HomeOptions {
 
     /**
      * Start up
+     *
+     * @param bool $register_hooks Whether to register admin hooks (pass false in unit tests).
      */
-    public function __construct() {
+    public function __construct( $register_hooks = true ) {
         if ( !defined( 'ABSPATH' ) ) {
             die( "Access denied" );
         }
         $this->factory = new Factory();
         $this->app_settings = aifs_get_app_settings();
         $this->logger = new Logger();
-        add_action( 'admin_enqueue_scripts', array($this, 'countdown_js_script') );
+        if ( $register_hooks ) {
+            add_action( 'admin_enqueue_scripts', array($this, 'countdown_js_script') );
+        }
+    }
+
+    /**
+     * Inject a custom logger (used by unit tests).
+     *
+     * @param Logger $logger Logger instance.
+     */
+    public function setLogger( $logger ) {
+        $this->logger = $logger;
+    }
+
+    /**
+     * Inject a custom admin factory (used by unit tests).
+     *
+     * @param Factory $factory Factory instance.
+     */
+    public function setFactory( $factory ) {
+        $this->factory = $factory;
     }
 
     /**
@@ -60,6 +82,7 @@ class HomeOptions {
      */
     public function display() {
         $this->log_all_ca_server_response_handler();
+        $this->log_all_ca_server_response_array_json_handler();
         if ( aifs_is_free_version() ) {
             if ( aifs_is_existing_user() && time() < strtotime( "January 1, 2023" ) ) {
                 //Display free Premium License request button
@@ -71,8 +94,22 @@ class HomeOptions {
                     $this->plan_comparison_table_handler();
                     $this->plan_comparison_table();
                 } else {
-                    wp_redirect( admin_url( 'admin.php?page=aifs_generate_ssl_manually' ) );
-                    exit;
+                    // Do not redirect when the environment is incompatible: Generate SSL
+                    // is not bootstrapped in that case, and the dashboard should stay
+                    // reachable so the requirements admin notice is visible. @since 4.7.1
+                    if ( !function_exists( 'aifs_get_environment_errors' ) || empty( aifs_get_environment_errors() ) ) {
+                        if ( wp_safe_redirect( admin_url( 'admin.php?page=aifs_generate_ssl_manually' ) ) ) {
+                            exit;
+                        }
+                    }
+                    echo aifs_header();
+                    echo '<div class="wrap" style="margin-top: 1em;"><p>';
+                    echo esc_html__( 'SSL generation is unavailable until the server environment requirements above are met. You can still use Force HTTPS if a certificate is already installed.', 'auto-install-free-ssl' );
+                    echo '</p><p><a class="button button-primary" href="' . esc_url( admin_url( 'admin.php?page=aifs_force_https' ) ) . '">';
+                    echo esc_html__( 'Force HTTPS', 'auto-install-free-ssl' );
+                    echo '</a></p></div>';
+                    echo aifs_powered_by();
+                    return;
                 }
             }
         }
@@ -102,7 +139,11 @@ class HomeOptions {
             //@since 4.0.0
         }
         $certificate = $this->factory->this_domain_get_ssl_file_path();
-        if ( $certificate ) {
+        // Guard against a fatal error if the openssl extension is unavailable
+        // (e.g. disabled after a certificate was already issued). @since 4.7.1
+        if ( $certificate && !extension_loaded( 'openssl' ) ) {
+            $text_display .= '<strong>' . esc_html__( 'SSL certificate details are unavailable because the OpenSSL PHP extension is not enabled.', 'auto-install-free-ssl' ) . '</strong><br />';
+        } elseif ( $certificate ) {
             $cert_array = openssl_x509_parse( openssl_x509_read( file_get_contents( $certificate ) ) );
             /*$date = new DateTime('@' . $cert_array['validTo_time_t']);
               $expiry_date = $date->format('Y-m-d H:i:s') . ' ' . date_default_timezone_get();*/
@@ -791,8 +832,15 @@ class HomeOptions {
                 wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
             }
             update_option( 'aifs_free_plan_selected', 1 );
-            wp_redirect( admin_url( 'admin.php?page=aifs_generate_ssl_manually' ) );
-            exit;
+            // When the environment is incompatible, Generate SSL still has a menu entry but
+            // soft-fails; keep the user on the dashboard so the requirements notice is visible.
+            $redirect_url = admin_url( 'admin.php?page=aifs_generate_ssl_manually' );
+            if ( function_exists( 'aifs_get_environment_errors' ) && !empty( aifs_get_environment_errors() ) ) {
+                $redirect_url = admin_url( 'admin.php?page=auto_install_free_ssl' );
+            }
+            if ( wp_safe_redirect( $redirect_url ) ) {
+                exit;
+            }
         } else {
             if ( isset( $_GET['aifspro'] ) ) {
                 //PRO plan selected
@@ -801,8 +849,9 @@ class HomeOptions {
                 }
                 update_option( 'aifs_premium_plan_selected', get_option( 'aifs_premium_plan_selected' ) + 1 );
                 //wp_redirect(admin_url('admin.php?page=auto_install_free_ssl-pricing&checkout=true&plan_id=17218&plan_name=pro&billing_cycle=annual&pricing_id=19386&currency=usd'));
-                wp_redirect( $this->factory->upgrade_url( $coupon_code, "checkout=true&plan_id=17218&plan_name=pro&billing_cycle=annual&pricing_id=19386" . (( $coupon_code ? "&hide_coupon=true&currency=usd" : "&currency=usd" )) ) );
-                exit;
+                if ( wp_redirect( $this->factory->upgrade_url( $coupon_code, "checkout=true&plan_id=17218&plan_name=pro&billing_cycle=annual&pricing_id=19386" . (( $coupon_code ? "&hide_coupon=true&currency=usd" : "&currency=usd" )) ) ) ) {
+                    exit;
+                }
             } else {
                 if ( isset( $_GET['aifsprounlimited'] ) ) {
                     //PRO UNLIMITED plan selected
@@ -811,8 +860,9 @@ class HomeOptions {
                     }
                     update_option( 'aifs_premium_plan_selected', get_option( 'aifs_premium_plan_selected' ) + 1 );
                     //wp_redirect(admin_url('admin.php?page=auto_install_free_ssl-pricing&checkout=true&plan_id=17218&plan_name=pro&billing_cycle=annual&pricing_id=19771&currency=usd'));
-                    wp_redirect( $this->factory->upgrade_url( $coupon_code, "checkout=true&plan_id=17218&plan_name=pro&billing_cycle=annual&pricing_id=19771" . (( $coupon_code ? "&hide_coupon=true&currency=usd" : "&currency=usd" )) ) );
-                    exit;
+                    if ( wp_redirect( $this->factory->upgrade_url( $coupon_code, "checkout=true&plan_id=17218&plan_name=pro&billing_cycle=annual&pricing_id=19771" . (( $coupon_code ? "&hide_coupon=true&currency=usd" : "&currency=usd" )) ) ) ) {
+                        exit;
+                    }
                 }
             }
         }
@@ -837,8 +887,9 @@ class HomeOptions {
                         'event' => 'ping',
                     ] );
                     aifs_add_flash_notice( $success_text );
-                    wp_redirect( $redirect_url );
-                    exit;
+                    if ( wp_safe_redirect( $redirect_url ) ) {
+                        exit;
+                    }
                 }
             }
             if ( $_GET['log_all_ca_server_response'] == "no" ) {
@@ -848,8 +899,49 @@ class HomeOptions {
                         'event' => 'ping',
                     ] );
                     aifs_add_flash_notice( $success_text );
-                    wp_redirect( $redirect_url );
-                    exit;
+                    if ( wp_safe_redirect( $redirect_url ) ) {
+                        exit;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Log or stop logging all responses (in JSON or array format, in an AI-agent friendly way)
+     * received from the Let's Encrypt™ server, even when the HTTP status code is unexpected.
+     * @since 4.7.1
+     */
+    public function log_all_ca_server_response_array_json_handler() {
+        if ( isset( $_GET['log_all_ca_server_response_array_json'] ) ) {
+            if ( aifs_is_free_version() && get_option( 'aifs_free_plan_selected' ) ) {
+                $redirect_url = admin_url( 'admin.php?page=aifs_generate_ssl_manually' );
+            } else {
+                $redirect_url = admin_url( 'admin.php?page=auto_install_free_ssl' );
+            }
+            $common_text = __( "Settings successfully updated!", 'auto-install-free-ssl' ) . " ";
+            if ( $_GET['log_all_ca_server_response_array_json'] == "yes" ) {
+                if ( update_option( 'aifs_log_all_ca_server_response_array_json', 1 ) ) {
+                    $success_text = $common_text . __( "We'll log all responses (in JSON or array format) from the Let's Encrypt™ server, even when the HTTP status code is unexpected.", 'auto-install-free-ssl' );
+                    $this->logger->write_log( 'info', $success_text, [
+                        'event' => 'ping',
+                    ] );
+                    aifs_add_flash_notice( $success_text );
+                    if ( wp_safe_redirect( $redirect_url ) ) {
+                        exit;
+                    }
+                }
+            }
+            if ( $_GET['log_all_ca_server_response_array_json'] == "no" ) {
+                if ( delete_option( 'aifs_log_all_ca_server_response_array_json' ) ) {
+                    $success_text = $common_text . __( "We have stopped logging all responses from the Let's Encrypt™ server.", 'auto-install-free-ssl' );
+                    $this->logger->write_log( 'info', $success_text, [
+                        'event' => 'ping',
+                    ] );
+                    aifs_add_flash_notice( $success_text );
+                    if ( wp_safe_redirect( $redirect_url ) ) {
+                        exit;
+                    }
                 }
             }
         }

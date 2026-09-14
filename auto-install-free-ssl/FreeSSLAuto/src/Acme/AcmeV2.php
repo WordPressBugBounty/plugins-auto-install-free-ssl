@@ -67,6 +67,9 @@ class AcmeV2 {
 
     private $adminFactory;
 
+    /** @var bool True after ACME account registration succeeds and AdminFactory is available. */
+    private $account_ready = false;
+
     private $accountKeyDetails;
 
     public $key_size;
@@ -76,12 +79,14 @@ class AcmeV2 {
     /**
      * Initiates the Let's Encrypt main class.
      *
-     * @param string $certificatesBaseDir
-     * @param array  $contact
-     * @param bool   $is_staging
-     * @param array  $dns_provider
-     * @param int    $key_size
-     * @param array  $cPanel
+     * @param string      $certificatesBaseDir
+     * @param array       $contact
+     * @param bool        $is_staging
+     * @param array       $dns_provider
+     * @param int         $key_size
+     * @param array       $cPanel
+     * @param string      $server_ip
+     * @param string|null $challenge_type Optional ACME challenge type (http-01|dns-01). When null, reads sanitized $_POST['aifs_challenge_type'] at the edge for free-version redirects only.
      */
     public function __construct(
         $certificatesBaseDir,
@@ -90,7 +95,8 @@ class AcmeV2 {
         $dns_provider,
         $key_size,
         $cPanel,
-        $server_ip
+        $server_ip,
+        $challenge_type = null
     ) {
         if ( !defined( 'ABSPATH' ) ) {
             die( "Access denied" );
@@ -117,16 +123,67 @@ class AcmeV2 {
                 //If free version, save flush message and redirect.
                 aifs_add_flash_notice( '<span style="font-size: larger; color: red;">' . $return_array['error_text'] . '</span>', "error" );
                 $redirect_url = admin_url( 'admin.php?page=aifs_generate_ssl_manually' );
-                if ( $_POST['aifs_challenge_type'] == "dns-01" ) {
-                    $redirect_url .= '&tab=' . $_POST['aifs_challenge_type'];
+                $resolved_challenge = $this->resolveChallengeType( $challenge_type );
+                if ( 'dns-01' === $resolved_challenge ) {
+                    $redirect_url .= '&tab=' . rawurlencode( $resolved_challenge );
                 }
-                wp_redirect( $redirect_url );
-                exit;
+                if ( wp_safe_redirect( $redirect_url ) ) {
+                    exit;
+                }
+                // Redirect cancelled (e.g. tests) or failed — leave account_ready false.
+                return;
             } else {
                 die( __( "Exit", 'auto-install-free-ssl' ) );
             }
         }
         $this->adminFactory = new AdminFactory();
+        $this->account_ready = true;
+    }
+
+    /**
+     * Whether ACME account setup finished successfully.
+     *
+     * @return bool
+     */
+    public function isAccountReady() {
+        return (bool) $this->account_ready;
+    }
+
+    /**
+     * Resolve challenge type from an explicit value or sanitized POST input.
+     *
+     * @param string|null $challenge_type Explicit challenge type from the caller edge.
+     * @return string Empty string, http-01, or dns-01.
+     */
+    protected function resolveChallengeType( $challenge_type ) {
+        if ( null !== $challenge_type && '' !== $challenge_type ) {
+            $candidate = sanitize_text_field( $challenge_type );
+        } elseif ( isset( $_POST['aifs_challenge_type'] ) ) {
+            $candidate = sanitize_text_field( wp_unslash( $_POST['aifs_challenge_type'] ) );
+        } else {
+            $candidate = '';
+        }
+        if ( 'http-01' === $candidate || 'dns-01' === $candidate ) {
+            return $candidate;
+        }
+        return '';
+    }
+
+    /**
+     * Inject a custom logger (used by unit tests).
+     *
+     * @param Logger $logger Logger instance.
+     *
+     * @return void
+     */
+    public function setLogger( $logger ) {
+        $this->logger = $logger;
+        if ( $this->client ) {
+            $this->client->setLogger( $logger );
+        }
+        if ( $this->factory ) {
+            $this->factory->setLogger( $logger );
+        }
     }
 
     /**
@@ -153,7 +210,16 @@ class AcmeV2 {
         $this->factory->countryCode = $countryCode;
         $this->factory->state = $state;
         $this->factory->organization = $organization;
-        $return_array_step1 = [];
+        $return_array_step1 = array(
+            'response'    => array(
+                'curlinfo_http_code' => 0,
+            ),
+            'domain_data' => array(),
+        );
+        if ( !$this->isAccountReady() ) {
+            $this->logger->exception_sse_friendly( 'ACME account is not ready; cannot start certificate order.', __FILE__, __LINE__ );
+            return $return_array_step1;
+        }
         $this->logger->log( __( "Starting the SSL certificate generation process with ACME V2", 'auto-install-free-ssl' ) );
         $privateAccountKey = $this->factory->readPrivateKey( $this->accountKeyPath );
         $this->accountKeyDetails = openssl_pkey_get_details( $privateAccountKey );
@@ -168,11 +234,41 @@ class AcmeV2 {
         // 1. getting available authentication options
         $this->logger->log( __( "Requesting challenges for the array of domains", 'auto-install-free-ssl' ) );
         $newOrderUrl = $this->client->getUrl( 'newOrder' );
+        if ( empty( $newOrderUrl ) ) {
+            $this->logger->exception_sse_friendly( 'ACME newOrder URL is unavailable.', __FILE__, __LINE__ );
+            return $return_array_step1;
+        }
         $urlParts = explode( '/', $newOrderUrl );
         $response = $this->signedRequestV2( $newOrderUrl, [
             'url'         => end( $urlParts ),
             'identifiers' => $dns,
         ] );
+        $this->assertAcmeSuccess( $response, 'certificate order' );
+        $expected_status_codes = array(
+            200,
+            201,
+            202,
+            204
+        );
+        $http_code = $this->client->getLastCode();
+        $order_complete = is_array( $response ) && !empty( $response['authorizations'] ) && !empty( $response['finalize'] ) && in_array( $http_code, $expected_status_codes, true );
+        if ( !$order_complete ) {
+            if ( is_array( $response ) && in_array( $http_code, $expected_status_codes, true ) && (empty( $response['authorizations'] ) || empty( $response['finalize'] )) ) {
+                $this->logger->exception_sse_friendly( 'Let\'s Encrypt returned an incomplete certificate order response: ' . json_encode( $response ), __FILE__, __LINE__ );
+            }
+            if ( !is_array( $response ) ) {
+                $response = array();
+            }
+            if ( !isset( $response['curlinfo_http_code'] ) ) {
+                $response['curlinfo_http_code'] = $http_code;
+            }
+            // Ensure callers that only check HTTP status treat incomplete bodies as failure.
+            if ( in_array( (int) $response['curlinfo_http_code'], $expected_status_codes, true ) && (empty( $response['authorizations'] ) || empty( $response['finalize'] )) ) {
+                $response['curlinfo_http_code'] = 0;
+            }
+            $return_array_step1['response'] = $response;
+            return $return_array_step1;
+        }
         $return_array_step1['response'] = $response;
         //@todo
         $n = 0;
@@ -187,7 +283,9 @@ class AcmeV2 {
                 $domain = $response2['identifier']['value'];
             }
             $return_array_step1['domain_data'][$domain]['response2'] = $response2;
-            if ( 'valid' === $response2['status'] ) {
+            // L-11: guard against a shapeless $response2 the same way the
+            // already-hardened call sites elsewhere in this file do.
+            if ( is_array( $response2 ) && isset( $response2['status'] ) && 'valid' === $response2['status'] ) {
                 //Domain ownership already verified. Skip the verification process
                 /* translators: %s: A domain name, e.g., example.com */
                 $this->logger->log( sprintf( __( "Domain (%s) already verified. Skip the verification process.", 'auto-install-free-ssl' ), $domain ) );
@@ -262,6 +360,15 @@ class AcmeV2 {
                     'n'   => Base64UrlSafeEncoder::encode( $this->accountKeyDetails['rsa']['n'] ),
                 ];
                 $payload = trim( $challenge['token'] . '.' . Base64UrlSafeEncoder::encode( hash( 'sha256', json_encode( $header ), true ) ) );
+                // C-5: store the raw key-authorization under a challenge-agnostic key
+                // for BOTH challenge types. step2VerifyDomainOwnership() used to read
+                // only $value['http-01']['payload'] regardless of $challenge_type, so
+                // on a dns-01 authorization (which never wrote that key) it sent
+                // 'keyAuthorization' => null and Let's Encrypt rejected the request --
+                // wildcard/DNS-01 issuance was completely broken. The legacy
+                // ['http-01']['payload'] key is still written below so any stored
+                // in-flight state from an older plugin version still resolves.
+                $return_array_step1['domain_data'][$domain]['payload'] = $payload;
                 //HTTP-01
                 if ( $return_array_step1['domain_data'][$domain]['challenge_type'] == 'http-01' ) {
                     $return_array_step1['domain_data'][$domain]['http-01']['file_name'] = $challenge['token'];
@@ -361,7 +468,7 @@ class AcmeV2 {
         if ( $sleep_execution ) {
             //DNS TXT record needs time to propagate. So, delay the execution for 5 minutes
             $this->logger->log( __( "Execution sleeping for 2 minutes.", 'auto-install-free-ssl' ) );
-            sleep( 120 );
+            $this->sleepSeconds( 120 );
             $this->logger->log( __( "Execution resumed after 2 minutes of sleep.", 'auto-install-free-ssl' ) );
         }
         //Loop to check TXT propagation status
@@ -372,7 +479,7 @@ class AcmeV2 {
             //actual value is false
             //waiting loop
             do {
-                $result = dns_get_record( $sub_domain, DNS_TXT );
+                $result = $this->lookupDnsTxtRecords( $sub_domain );
                 //@todo not working as expected. Too much delay in detecting DNS record.
                 //Remove domain records other than $dns_txt_record
                 $txt_details = array_reduce( $result, function ( $v, $w ) use(&$dns_txt_record) {
@@ -389,13 +496,13 @@ class AcmeV2 {
                     $min = __( "2", 'auto-install-free-ssl' );
                     /* translators: %1$s: DNS TXT record; %2$s: Number of minutes, e.g., 2 */
                     $this->logger->log( sprintf( __( 'TXT record (%1$s) has NOT been propagated till now, sleeping for %2$s minutes.', 'auto-install-free-ssl' ), $dns_txt_record, $min ) );
-                    sleep( 120 );
+                    $this->sleepSeconds( 120 );
                 }
             } while ( !$propagated );
             return true;
         } else {
             //First, verify internally. Then send to LE server to verify
-            $result = dns_get_record( $sub_domain, DNS_TXT );
+            $result = $this->lookupDnsTxtRecords( $sub_domain );
             //Remove domain records other than $dns_txt_record
             $txt_details = array_reduce( $result, function ( $v, $w ) use(&$dns_txt_record) {
                 return ( $v ? $v : (( $w['txt'] === $dns_txt_record ? $w : false )) );
@@ -437,13 +544,43 @@ class AcmeV2 {
             }
         }
         json_encode( $challenge );
-        $payload = $value['http-01']['payload'];
+        // C-5: previously always read $value['http-01']['payload'], which
+        // step1GetAuthenticationTokens() only ever populated for the http-01 branch --
+        // a dns-01 authorization has no such key, so $payload was null and Let's
+        // Encrypt rejected the challenge-completion request. Read the
+        // challenge-agnostic 'payload' key step1 now writes for both challenge types;
+        // fall back to the legacy ['http-01']['payload'] key for any in-flight state
+        // stored by an older plugin version.
+        if ( isset( $value['payload'] ) ) {
+            $payload = $value['payload'];
+        } elseif ( isset( $value['http-01']['payload'] ) ) {
+            $payload = $value['http-01']['payload'];
+        } else {
+            $payload = null;
+        }
         $response2 = $value['response2'];
         $this->logger->log( __( "Sending request to challenge", 'auto-install-free-ssl' ) );
-        $result['status'] = $response2['status'];
+        // L-11: guard against a shapeless $response2.
+        $result['status'] = ( is_array( $response2 ) && isset( $response2['status'] ) ? $response2['status'] : null );
         $ended = !('pending' === $result['status']);
+        // L-10: bound the waiting loop (max attempts + wall-clock deadline) so a
+        // persistently 'pending' challenge can't spin forever.
+        $max_attempts = 60;
+        // ~2 minutes at 2s/attempt.
+        $deadline = time() + 300;
+        // 5-minute wall-clock ceiling regardless of attempt count.
+        $attempt_number = 0;
         // waiting loop
         do {
+            ++$attempt_number;
+            if ( $attempt_number > $max_attempts || time() > $deadline ) {
+                $ended = true;
+                /* translators: %1$s: A domain name, e.g., example.com; %2$s: Number of attempts */
+                $this->logger->log_v2( 'error', sprintf( __( 'Gave up waiting for domain ownership verification of %1$s to complete after %2$s attempts.', 'auto-install-free-ssl' ), $domain, $attempt_number ), [
+                    'event' => 'exit',
+                ] );
+                break;
+            }
             if ( !$ended ) {
                 // send request to challenge
                 $result = $this->signedRequestV2( $challenge['url'], [
@@ -462,7 +599,13 @@ class AcmeV2 {
                 				$this->logger->log("Let's Encrypt server response (Challenge result): <br />\n". $result_text);*/
                 // END since 3.6.1 (added July 16, 2023)
             }
-            if ( empty( $result['status'] ) || 'invalid' === $result['status'] || 400 === $result['status'] || 404 === $result['status'] ) {
+            // H-6: the two integer comparisons here (400 === $result['status'] /
+            // 404 === $result['status']) were dead code -- $result['status'] is an
+            // ACME status string ('pending'/'valid'/'invalid'), never an int, so
+            // these could never be true. They were clearly meant to test the HTTP
+            // response code instead; use $this->client->getLastCode() for that.
+            $last_http_code = $this->client->getLastCode();
+            if ( empty( $result['status'] ) || 'invalid' === $result['status'] || 400 === $last_http_code || 404 === $last_http_code ) {
                 $ended = true;
                 //$msg = "<br />\n " . __( "Content of", 'auto-install-free-ssl' ) . " " . $challenge['url'] . "  <br />\n";
                 $msg = "<br />\n Content of " . $challenge['url'] . "  <br />\n";
@@ -497,7 +640,9 @@ class AcmeV2 {
             				'token' => $challenge['token'],
             			]
             		);*/
-            if ( 'valid' === $result['status'] ) {
+            // L-11: guard against a shapeless $result (e.g. signedRequestV2()
+            // returning null on an empty nonce).
+            if ( is_array( $result ) && isset( $result['status'] ) && 'valid' === $result['status'] ) {
                 $ended = true;
                 // if premium version START
                 if ( !aifs_is_free_version() && 'http-01' === $challenge_type ) {
@@ -517,12 +662,15 @@ class AcmeV2 {
                 /* translators: %s: Number of seconds, e.g., 2 */
                 $this->logger->log( sprintf( __( "Verification pending, sleeping %s seconds.", 'auto-install-free-ssl' ), $sec ) );
                 //sleep(1);
-                sleep( 2 );
+                $this->sleepSeconds( 2 );
             }
         } while ( !$ended );
+        // L-11: guard against a shapeless $result; strtoupper(null) is a PHP 8.1+
+        // deprecation.
+        $final_status = ( is_array( $result ) && isset( $result['status'] ) ? $result['status'] : 'unknown' );
         /* translators: %1$s: Status of the verification, e.g., 'valid'; %2$s: A domain name, e.g., example.com */
-        $this->logger->log( sprintf( __( 'Verification ended with status: \'%1$s\' for the domain %2$s', 'auto-install-free-ssl' ), strtoupper( $result['status'] ), $domain ) );
-        if ( 'valid' === $result['status'] ) {
+        $this->logger->log( sprintf( __( 'Verification ended with status: \'%1$s\' for the domain %2$s', 'auto-install-free-ssl' ), strtoupper( $final_status ), $domain ) );
+        if ( 'valid' === $final_status ) {
             return true;
         } else {
             return false;
@@ -562,14 +710,25 @@ class AcmeV2 {
             //since 3.6.1, Don't translate exception message
             return false;
         }
-        if ( empty( $result['certificate'] ) ) {
-            $this->logger->exception_sse_friendly( "The 'certificate' key (location value) is empty in the last response from Let's Encrypt™. Please try again after some time.", __FILE__, __LINE__ );
+        if ( !\is_array( $result ) || empty( $result['certificate'] ) ) {
+            $this->logger->exception_sse_friendly( "Invalid finalize response or empty 'certificate' key from Let's Encrypt™. Please try again after some time. Response: " . json_encode( $result ), __FILE__, __LINE__ );
             return false;
         } else {
             $location = $result['certificate'];
+            // L-10: bound this loop -- previously a persistent 202 (pending) spun
+            // forever with no cap.
+            $cert_max_attempts = 60;
+            $cert_deadline = time() + 300;
+            $cert_attempt_number = 0;
             // waiting loop
             $certificates = [];
             while ( 1 ) {
+                ++$cert_attempt_number;
+                if ( $cert_attempt_number > $cert_max_attempts || time() > $cert_deadline ) {
+                    $this->logger->exception_sse_friendly( "Gave up waiting for certificate generation to complete after {$cert_attempt_number} attempts.", __FILE__, __LINE__ );
+                    $certificates = [];
+                    break;
+                }
                 //$this->client->getLastLinks();
                 $fullchain = $this->client->get( $location, null, true );
                 $this->logger->log( __( "Location value", 'auto-install-free-ssl' ) . ": " . $location );
@@ -682,6 +841,29 @@ class AcmeV2 {
     }
 
     /**
+     * Look up DNS TXT records for DNS-01 verification (override in tests).
+     *
+     * @param string $hostname Hostname to query.
+     *
+     * @return array
+     */
+    protected function lookupDnsTxtRecords( $hostname ) {
+        $result = dns_get_record( $hostname, DNS_TXT );
+        return ( is_array( $result ) ? $result : array() );
+    }
+
+    /**
+     * Sleep for the given number of seconds (override in tests).
+     *
+     * @param int $seconds Seconds to sleep.
+     *
+     * @return void
+     */
+    protected function sleepSeconds( $seconds ) {
+        sleep( $seconds );
+    }
+
+    /**
      *
      *
      * @param type $key_path
@@ -725,6 +907,17 @@ class AcmeV2 {
         ];
         $protected = $header;
         $protected['nonce'] = $this->getLastNonce();
+        if ( '' === $protected['nonce'] ) {
+            // getLastNonce() already logged a clear, actionable error (bounded retries
+            // exhausted). Do not dispatch a request that is guaranteed to fail with a
+            // confusing ACME badNonce/malformed-JWS error -- abort here instead, matching
+            // Client::curl()'s own "precondition failed, return without dispatching" pattern.
+            // Invalidate the last HTTP code too, since it otherwise still holds whatever
+            // status the nonce-fetch retries happened to receive, which callers checking
+            // getLastCode() after this abort would wrongly read as this request's outcome.
+            $this->client->invalidateLastCode();
+            return null;
+        }
         $protected['url'] = $newAccountUrl;
         /*
         echo "Protected Outer: <br />". str_replace('\\/', '/', json_encode($protected))."<br /><br />";
@@ -768,6 +961,13 @@ class AcmeV2 {
         ];
         $protected = $header;
         $protected['nonce'] = $this->getLastNonce();
+        if ( '' === $protected['nonce'] ) {
+            // Same abort-before-dispatch guard as signedRequest() above, including the
+            // getLastCode() invalidation so a stale nonce-fetch status code can't be
+            // mistaken for this (never sent) request's outcome.
+            $this->client->invalidateLastCode();
+            return null;
+        }
         $protected['url'] = $uri;
         //$payload64 = Base64UrlSafeEncoder::encode(str_replace('\\/', '/', json_encode($payload))); //use JSON_UNESCAPED_SLASHES
         //$protected64 = Base64UrlSafeEncoder::encode(str_replace('\\/', '/', json_encode($protected)));//use JSON_UNESCAPED_SLASHES
@@ -793,17 +993,75 @@ class AcmeV2 {
     }
 
     /**
+     * Boundary-safe check that $path is $base itself or a descendant of it.
+     * Avoids the classic bug where strpos($path, $base) === 0 wrongly matches
+     * a sibling path (e.g. "/home/user2" satisfying base "/home/user").
      *
+     * @param string $path Absolute path to check.
+     * @param string $base Absolute base directory.
+     * @return bool
+     */
+    public static function isPathWithinBase( $path, $base ) {
+        $base = rtrim( $base, \DIRECTORY_SEPARATOR );
+        return $path === $base || 0 === strpos( $path, $base . \DIRECTORY_SEPARATOR );
+    }
+
+    /**
+     * Assert that the last ACME HTTP response was a success status code.
      *
+     * @param mixed  $response  Decoded ACME response body.
+     * @param string $operation Human-readable operation name for error messages.
+     * @return void
+     */
+    private function assertAcmeSuccess( $response, $operation ) {
+        $code = $this->client->getLastCode();
+        $expected_status_codes = array(
+            200,
+            201,
+            202,
+            204
+        );
+        if ( \in_array( $code, $expected_status_codes, true ) ) {
+            return;
+        }
+        $this->logger->exception_sse_friendly( $this->formatAcmeErrorMessage( $response, $operation ), __FILE__, __LINE__ );
+    }
+
+    /**
+     * Build a clear ACME error message, preferring the server "detail" field when present.
+     *
+     * @param mixed  $response  Decoded ACME response body.
+     * @param string $operation Human-readable operation name.
      * @return string
      */
-    private function getLastNonce() {
+    private function formatAcmeErrorMessage( $response, $operation ) {
+        if ( \is_array( $response ) && !empty( $response['detail'] ) ) {
+            return 'Let\'s Encrypt rejected the ' . $operation . ' request: ' . $response['detail'];
+        }
+        return 'Let\'s Encrypt rejected the ' . $operation . ' request (HTTP ' . $this->client->getLastCode() . '): ' . json_encode( $response );
+    }
+
+    /**
+     * Fetch the last ACME Replay-Nonce, requesting a fresh one from the CA when needed.
+     *
+     * Bounded to a handful of attempts (instead of recursing without limit) so a persistently
+     * unavailable ACME directory/newNonce endpoint fails with a clear error rather than
+     * exhausting the PHP call stack/memory.
+     *
+     * @param int $attempt Current attempt number (internal; callers should omit).
+     * @return string
+     */
+    private function getLastNonce( $attempt = 0 ) {
         if ( !is_null( $this->client->lastHeader ) && preg_match( '~Replay\\-Nonce: (.+)~i', $this->client->lastHeader, $matches ) ) {
             return trim( $matches[1] );
         }
+        if ( $attempt >= 3 ) {
+            $this->logger->exception_sse_friendly( "Could not obtain a Replay-Nonce from the Let's Encrypt server after 3 attempts.", __FILE__, __LINE__ );
+            return '';
+        }
         $newNonceUrl = $this->client->getUrl( 'newNonce' );
         $this->client->curl( 'HEAD', $newNonceUrl );
-        return $this->getLastNonce();
+        return $this->getLastNonce( $attempt + 1 );
     }
 
     /**
@@ -818,7 +1076,8 @@ class AcmeV2 {
             $this->factory->generateKey( \dirname( $this->accountKeyPath ), $this->key_size );
             $response = $this->postNewReg( $this->accountKeyPath );
             $return_array = [];
-            if ( 'valid' === $response['status'] ) {
+            // L-11: guard against a shapeless $response.
+            if ( is_array( $response ) && isset( $response['status'] ) && 'valid' === $response['status'] ) {
                 $this->kid = $this->client->getLastLocation();
                 $this->logger->log( 'kid: ' . $this->kid );
                 //Save the kid in a text file
@@ -857,7 +1116,8 @@ class AcmeV2 {
                         'event' => 'exit',
                     ] );
                 }
-                if ( strpos( $response['type'], 'invalidEmail' ) !== false ) {
+                // L-11: strpos() on a missing/null 'type' is a PHP 8.1+ deprecation.
+                if ( isset( $response['type'] ) && strpos( $response['type'], 'invalidEmail' ) !== false ) {
                     $error_text = sprintf(
                         /* translators: %1$s: An email id; %2$s: Opening HTML 'strong' tag; %3$s: Closing 'strong' tag. (Opening and closing 'strong' tags make the enclosed text bold. "Let's Encrypt" is a nonprofit SSL certificate authority.) */
                         __( 'Oops! An invalid email id (%1$s) was set as the admin email of this WordPress website. But Let\'s Encrypt™ expects we should register an account with a working email address. So please %2$s fill in the following text field with your real email id %3$s and try again. This will update the admin email too.', 'auto-install-free-ssl' ),

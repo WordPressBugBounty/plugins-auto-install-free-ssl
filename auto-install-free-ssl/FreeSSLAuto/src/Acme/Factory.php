@@ -55,6 +55,17 @@ class Factory {
     }
 
     /**
+     * Inject a custom logger (used by unit tests).
+     *
+     * @param Logger $logger Logger instance.
+     *
+     * @return void
+     */
+    public function setLogger( $logger ) {
+        $this->logger = $logger;
+    }
+
+    /**
      *
      *
      * Returns the private key.
@@ -139,7 +150,46 @@ class Factory {
         if ( strpos( $domain, 'www.' ) !== false && strpos( $domain, 'www.' ) === 0 ) {
             $domain = substr( $domain, 4 );
         }
+        if ( !$this->isValidDomainForPath( $domain ) ) {
+            $this->logger->log_v2( 'error', 'getDomainPath() rejected an unsafe/invalid domain value.' );
+            return false;
+        }
         return $this->getCertificatesDir() . AIFS_DS . $domain . AIFS_DS;
+    }
+
+    /**
+     * Validate that $domain is safe to use as a single path segment (no traversal,
+     * no path separators, no null byte) and looks like a legal hostname -- optionally
+     * a wildcard (a leading "*.").
+     *
+     * C-3/C-4: getDomainPath() previously concatenated $domain into a filesystem path
+     * with no sanitization at all, allowing directory traversal via a crafted
+     * $_GET['domain'] value.
+     *
+     * @param string $domain
+     * @return bool
+     */
+    public function isValidDomainForPath( $domain ) {
+        if ( !is_string( $domain ) || '' === $domain ) {
+            return false;
+        }
+        if ( false !== strpos( $domain, "\x00" ) ) {
+            return false;
+        }
+        if ( false !== strpos( $domain, '..' ) || false !== strpos( $domain, '/' ) || false !== strpos( $domain, '\\' ) ) {
+            return false;
+        }
+        // Allow an optional leading "*." for wildcard domains.
+        $hostname = $domain;
+        if ( 0 === strpos( $hostname, '*.' ) ) {
+            $hostname = substr( $hostname, 2 );
+        }
+        if ( '' === $hostname ) {
+            return false;
+        }
+        // A conservative, legal-hostname shape: labels of letters/digits/hyphens,
+        // separated by dots, each label 1-63 chars, not starting/ending with a hyphen.
+        return 1 === preg_match( '/^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/', $hostname );
     }
 
     /**

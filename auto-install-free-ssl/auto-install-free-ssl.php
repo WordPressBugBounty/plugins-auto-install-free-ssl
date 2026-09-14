@@ -6,7 +6,7 @@
  * Plugin Name: Auto-Install Free SSL
  * Plugin URI:  https://freessl.tech
  * Description: Generate & install Free SSL Certificates, activate force HTTPS redirect with one click to fix insecure links & mixed content warnings, and get automatic Renewal Reminders.
- * Version:     4.7.0
+ * Version:     5.0.0
  * Requires at least: 4.1
  * Requires PHP:      5.6
  * Author:      Free SSL Dot Tech
@@ -48,6 +48,29 @@ use AutoInstallFreeSSL\FreeSSLAuto\Admin\HomeOptions;
 use AutoInstallFreeSSL\FreeSSLAuto\Admin\Factory;
 use AutoInstallFreeSSL\FreeSSLAuto\Email;
 use AutoInstallFreeSSL\FreeSSLAuto\Acme\Client;
+/*
+ * L-13: verified, no change required -- the original finding's description of
+ * this structure was inaccurate. For the record, since the misleading `//}` at
+ * the end of the Freemius block below invites the wrong reading:
+ *
+ * This `else` opens here and closes at line 175 (confirmed with token_get_all()
+ * brace-depth analysis) -- NOT at the end of the file. It contains the AIFS_*
+ * constants, the vendor/autoload.php and includes/helpers.php requires, and the
+ * ForceSSL `init` hook. Everything after line 175, including the `is_admin()`
+ * block near the end of the file, runs unconditionally.
+ *
+ * The gating is deliberate re-entrancy protection. Freemius parallel activation
+ * is enabled for this plugin (see 'parallel_activation' below), so free and
+ * premium can both load and aifssl_fs() can already exist. Re-running this block
+ * would redefine constants and double-register hooks. It is safe to skip because
+ * PHP constants, declared functions and a registered autoloader are all
+ * process-global: whichever copy loads second inherits them from the first.
+ *
+ * Known limitation (accepted): AIFS_DIR / AIFS_URL / AIFS_*_PLUGIN_BASENAME
+ * resolve against whichever copy loaded FIRST. Under parallel activation that
+ * state is transient -- Freemius deactivates one copy shortly after -- so this
+ * is not worth the risk of restructuring the bootstrap.
+ */
 if ( function_exists( 'aifssl_fs' ) ) {
     aifssl_fs()->set_basename( false, __FILE__ );
 } else {
@@ -126,12 +149,21 @@ if ( function_exists( 'aifssl_fs' ) ) {
     if ( file_exists( AIFS_DIR . 'vendor' . AIFS_DS . 'autoload.php' ) ) {
         require_once AIFS_DIR . 'vendor' . AIFS_DS . 'autoload.php';
     }
+    if ( file_exists( AIFS_DIR . 'includes' . AIFS_DS . 'helpers.php' ) ) {
+        require_once AIFS_DIR . 'includes' . AIFS_DS . 'helpers.php';
+    }
     /**
      * Force SSL on frontend and backend
      */
     //new ForceSSL();
     //ForceSSL::getInstance();
-    add_action( 'init', array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\ForceSSL', 'getInstance'), 12 );
+    // accepted_args=0: WP must not pass a null placeholder into getInstance( $register_hooks ).
+    add_action(
+        'init',
+        array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\ForceSSL', 'getInstance'),
+        12,
+        0
+    );
 }
 if ( !function_exists( 'aifs_home_menu' ) ) {
     /** Create the menu */
@@ -170,54 +202,89 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
     }
 
     /**
-     * Get the environment errors to check if the environment is compatible with the plugin
+     * Hard-stop when the environment is incompatible (admin UI or forced contexts such as cron.php).
+     * Frontend and WP-Cron soft-bail elsewhere; Plugins / AJAX screens stay reachable.
+     *
      * @since 4.6.2
+     * @param bool $force_stop When true, always die (used by standalone cron.php).
+     * @return bool True when incompatible (and hard-stop skipped); false when compatible.
      */
-    function aifs_get_environment_errors() {
-        $errors = array();
-        if ( !defined( 'PHP_VERSION_ID' ) || PHP_VERSION_ID < 50600 ) {
-            $errors[] = 'php_version';
+    function aifs_maybe_stop_for_environment_errors(  $force_stop = false  ) {
+        $errors = aifs_get_environment_errors();
+        if ( empty( $errors ) ) {
+            return false;
         }
-        global $wp_version;
-        if ( !empty( $wp_version ) && version_compare( $wp_version, '4.1', '<' ) ) {
-            // @since 4.7.0 added WordPress version check and removed allow_url_fopen check
-            $errors[] = 'wordpress_version';
+        if ( !$force_stop ) {
+            // Do not take down the public site; Force HTTPS does not need these extensions.
+            if ( !is_admin() ) {
+                return true;
+            }
+            if ( aifs_should_skip_environment_hard_stop() ) {
+                return true;
+            }
         }
-        if ( !extension_loaded( 'openssl' ) ) {
-            $errors[] = 'openssl';
+        $messages = aifs_get_environment_error_messages( $errors );
+        $log_msg = implode( '<br />', $messages );
+        $log_msg .= '<br /><br />' . sprintf( 
+            /* translators: %s: URL to the Plugins admin screen */
+            __( 'Please <a href="%s">click here</a> to return to the plugins page.', 'auto-install-free-ssl' ),
+            esc_url( admin_url( 'plugins.php' ) )
+         );
+        if ( function_exists( 'wp_die' ) ) {
+            wp_die( $log_msg, esc_html( ( defined( 'AIFS_NAME' ) ? AIFS_NAME : 'Auto-Install Free SSL' ) ), array(
+                'response'  => 500,
+                'back_link' => true,
+            ) );
         }
-        if ( !extension_loaded( 'curl' ) ) {
-            $errors[] = 'curl';
-        }
-        return $errors;
+        die( wp_strip_all_tags( str_replace( '<br />', "\n", $log_msg ) ) );
     }
 
     /**
-     * Check if the environment is compatible with the plugin and stop the plugin if it is not
-     * @since 4.6.2
+     * Admin notice when the environment is incompatible (visible on Plugins screen escape hatch).
+     *
+     * @since 4.7.1
      */
-    function aifs_maybe_stop_for_environment_errors() {
+    function aifs_admin_notice_environment_errors() {
+        if ( !current_user_can( 'manage_options' ) ) {
+            return;
+        }
         $errors = aifs_get_environment_errors();
         if ( empty( $errors ) ) {
             return;
         }
-        $messages = array();
-        if ( in_array( 'php_version', $errors, true ) ) {
-            $messages[] = __( "You need at least PHP 5.6.0", 'auto-install-free-ssl' );
+        $messages = aifs_get_environment_error_messages( $errors );
+        echo '<div class="notice notice-error"><p><strong>' . esc_html( ( defined( 'AIFS_NAME' ) ? AIFS_NAME : 'Auto-Install Free SSL' ) ) . ':</strong> ';
+        echo esc_html__( 'This plugin cannot run on this server until the following requirements are met:', 'auto-install-free-ssl' );
+        echo '</p><ul style="list-style:disc;margin-left:1.5em;">';
+        foreach ( $messages as $message ) {
+            echo '<li>' . esc_html( $message ) . '</li>';
         }
-        if ( in_array( 'wordpress_version', $errors, true ) ) {
-            // @since 4.7.0 added WordPress version check error message and removed allow_url_fopen check
-            $messages[] = __( 'You need WordPress 4.1 or later', 'auto-install-free-ssl' );
+        echo '</ul></div>';
+    }
+
+    /**
+     * Proactive admin notice when this site's own WP_HTTP_BLOCK_EXTERNAL setting is blocking
+     * outgoing ACME requests without an accessible-hosts allow-list entry for the Let's Encrypt
+     * API host(s). Complements Acme\Client::curl()'s reactive log-time message (shown only when
+     * an ACME request actually fails) with a proactive warning visible before that happens.
+     *
+     * Shown only when the risk condition actually holds -- see
+     * aifs_wp_http_block_external_puts_acme_at_risk() -- so compatible installs are never nagged.
+     *
+     * @since 5.0.0
+     * @param bool|null   $block_external   Test-only override, see aifs_wp_http_block_external_puts_acme_at_risk().
+     * @param string|null $accessible_hosts Test-only override, see aifs_wp_http_block_external_puts_acme_at_risk().
+     */
+    function aifs_admin_notice_wp_http_block_external(  $block_external = null, $accessible_hosts = null  ) {
+        if ( !current_user_can( 'manage_options' ) ) {
+            return;
         }
-        if ( in_array( 'openssl', $errors, true ) ) {
-            $messages[] = __( "You need OpenSSL extension enabled with PHP", 'auto-install-free-ssl' );
+        if ( !function_exists( 'aifs_wp_http_block_external_puts_acme_at_risk' ) || !aifs_wp_http_block_external_puts_acme_at_risk( $block_external, $accessible_hosts ) ) {
+            return;
         }
-        if ( in_array( 'curl', $errors, true ) ) {
-            $messages[] = __( "You need Curl extension enabled with PHP", 'auto-install-free-ssl' );
-        }
-        $log_msg = implode( '<br />', $messages );
-        $log_msg .= '<br /><br />Please <a href="' . esc_url( admin_url( 'plugins.php' ) ) . '">click here</a> to return to the plugins page.';
-        wp_die( $log_msg );
+        echo '<div class="notice notice-warning"><p><strong>' . esc_html( ( defined( 'AIFS_NAME' ) ? AIFS_NAME : 'Auto-Install Free SSL' ) ) . ':</strong> ';
+        echo esc_html__( "This site blocks outgoing HTTP requests (WP_HTTP_BLOCK_EXTERNAL is enabled in wp-config.php) and has not allow-listed the Let's Encrypt ACME API host. SSL certificate issuance and renewal will fail until you add 'acme-v02.api.letsencrypt.org' and 'acme-staging-v02.api.letsencrypt.org' to WP_ACCESSIBLE_HOSTS in wp-config.php.", 'auto-install-free-ssl' );
+        echo '</p></div>';
     }
 
     /**
@@ -225,6 +292,21 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
      * Improved since 4.0.0
      * */
     function activate_auto_install_free_ssl() {
+        $errors = aifs_get_environment_errors();
+        if ( !empty( $errors ) ) {
+            deactivate_plugins( plugin_basename( __FILE__ ) );
+            $messages = aifs_get_environment_error_messages( $errors );
+            $log_msg = implode( '<br />', $messages );
+            $log_msg .= '<br /><br />' . sprintf( 
+                /* translators: %s: URL to the Plugins admin screen */
+                __( 'Please <a href="%s">click here</a> to return to the plugins page.', 'auto-install-free-ssl' ),
+                esc_url( admin_url( 'plugins.php' ) )
+             );
+            wp_die( $log_msg, esc_html( ( defined( 'AIFS_NAME' ) ? AIFS_NAME : 'Auto-Install Free SSL' ) ), array(
+                'response'  => 500,
+                'back_link' => true,
+            ) );
+        }
         if ( !get_option( 'aifs_user_since_free_only_version' ) ) {
             //add_option( 'aifs_user_since_free_only_version', 0 ); //If this value is not set (or was set 0), it's an NEW user
             add_option( 'aifs_user_since_free_only_version', (int) aifs_user_since_free_only_version() );
@@ -337,95 +419,6 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
     }
 
     /**
-     * Detects if the OS Windows
-     * @return bool
-     * @since 3.2.0
-     */
-    function aifs_is_os_windows() {
-        if ( strtoupper( substr( PHP_OS, 0, 3 ) ) === 'WIN' ) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    /**
-     * Detects the Server Software and returns it in lower case (apache | nginx | ms-iis). Returns FALSE if unable to detect.
-     * @return false|string
-     * @since 3.2.0
-     */
-    function aifs_server_software() {
-        $ss = strtolower( $_SERVER['SERVER_SOFTWARE'] );
-        if ( strpos( $ss, 'apache' ) !== false ) {
-            return "apache";
-        }
-        if ( strpos( $ss, 'nginx' ) !== false ) {
-            return "nginx";
-        }
-        if ( strpos( $ss, 'microsoft-iis' ) !== false || strpos( $ss, 'iis' ) !== false ) {
-            return "ms-iis";
-        }
-        return false;
-    }
-
-    /**
-     * Detects if the user using the plugin since the free only version
-     * @return false|mixed|void
-     */
-    function aifs_is_existing_user() {
-        return get_option( 'aifs_user_since_free_only_version', true );
-    }
-
-    /**
-     * Detects, if the user installed the plugin since free only version
-     * @since 3.0.6
-     */
-    function aifs_user_since_free_only_version() {
-        if ( get_option( 'basic_settings_auto_install_free_ssl' ) ) {
-            $basic_settings_existing = get_option( 'basic_settings_auto_install_free_ssl' );
-            /*if(empty($basic_settings_existing)){
-            			return true;
-            		}*/
-            if ( is_array( $basic_settings_existing ) ) {
-                $data = new AutoInstallFreeSSL\FreeSSLAuto\Admin\AutoDataEntry();
-                $basic_settings_default_v3 = $data->basic_settings_default_v3();
-                if ( $basic_settings_existing['use_wildcard'] != $basic_settings_default_v3['use_wildcard'] ) {
-                    return true;
-                } elseif ( $basic_settings_existing['is_staging'] != $basic_settings_default_v3['is_staging'] ) {
-                    return true;
-                } elseif ( $basic_settings_existing['country_code'] != $basic_settings_default_v3['country_code'] ) {
-                    return true;
-                } elseif ( $basic_settings_existing['state'] != $basic_settings_default_v3['state'] ) {
-                    return true;
-                } elseif ( $basic_settings_existing['organization'] != $basic_settings_default_v3['organization'] ) {
-                    return true;
-                } elseif ( $basic_settings_existing['certificate_directory'] != $basic_settings_default_v3['certificate_directory'] ) {
-                    return true;
-                } elseif ( $basic_settings_existing['days_before_expiry_to_renew_ssl'] != $basic_settings_default_v3['days_before_expiry_to_renew_ssl'] ) {
-                    return true;
-                } elseif ( $basic_settings_existing['using_cdn'] != $basic_settings_default_v3['using_cdn'] ) {
-                    return true;
-                } elseif ( $basic_settings_existing['key_size'] != $basic_settings_default_v3['key_size'] ) {
-                    return true;
-                } else {
-                    return false;
-                }
-            }
-            /*else{
-            			return true; //User didn't configured, but installed v2
-            		}*/
-        }
-        return false;
-    }
-
-    /**
-     * required for successful redirect
-     */
-    function aifs_do_output_buffer() {
-        ob_start();
-    }
-
-    /**
      * Set 1 for the user who is using this plugin since free-only version (V 1 or 2)
      */
     /*if(!get_option('aifs_user_since_free_only_version')){
@@ -469,144 +462,44 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
     	}*/
     //add_action( 'activated_plugin', 'aifs_activation_redirect' );
     /**
-     * Merge all the options in a single array.
-     * Improved since 3.5.1
-     * */
-    function aifs_get_app_settings() {
-        $basic_settings = get_option( 'basic_settings_auto_install_free_ssl' );
-        if ( $basic_settings && is_array( $basic_settings ) ) {
-            $app_settings = $basic_settings;
-        } else {
-            //return false;
-            return [];
-            // @todo - not tested - to fix this error: [30-Dec-2024 14:29:10 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/USERNAME/public_html/DIRECTORY_NAME/wp-content/plugins/auto-install-free-ssl-premium/FreeSSLAuto/src/Admin/Factory.php on line 1486
-        }
-        $cpanel_settings = get_option( 'cpanel_settings_auto_install_free_ssl' );
-        if ( $cpanel_settings && is_array( $cpanel_settings ) ) {
-            $app_settings = array_merge( $app_settings, $cpanel_settings );
-        }
-        $exclude_domains = get_option( 'exclude_domains_auto_install_free_ssl' );
-        if ( $exclude_domains && is_array( $exclude_domains ) ) {
-            $app_settings = array_merge( $app_settings, $exclude_domains );
-        }
-        $dns_provider = get_option( 'dns_provider_auto_install_free_ssl' );
-        if ( $dns_provider && is_array( $dns_provider ) ) {
-            $app_settings = array_merge( $app_settings, $dns_provider );
-        }
-        $all_domains = get_option( 'all_domains_auto_install_free_ssl' );
-        if ( $all_domains && is_array( $all_domains ) ) {
-            $app_settings = array_merge( $app_settings, $all_domains );
-        }
-        /*if ( get_option( 'domains_to_revoke_cert_auto_install_free_ssl' ) ) {
-        			$app_settings = array_merge( $app_settings, get_option( 'domains_to_revoke_cert_auto_install_free_ssl' ) );
-        		}*/
-        $domains_revoke_cert = get_option( 'aifs_domains_to_revoke_cert' );
-        if ( $domains_revoke_cert && is_array( $domains_revoke_cert ) ) {
-            $app_settings = array_merge( $app_settings, $domains_revoke_cert );
-        }
-        return $app_settings;
-    }
-
-    /**
-     * Get the domain of this WordPress website
-     *
-     * @param bool $remove_www
-     *
-     * @return string
-     *
-     * @since 1.0.0
-     */
-    /* function aifs_get_domain(bool $remove_www = true){
-     *  Removing parameter type hint to make compatible with PHP 5.6. Using scalar type hints like string is supported since PHP 7. */
-    function aifs_get_domain(  $remove_www = true  ) {
-        $site_url = get_site_url();
-        $site_url = parse_url( $site_url );
-        $domain = $site_url['host'];
-        if ( $remove_www && strpos( $domain, 'www.' ) !== false && strpos( $domain, 'www.' ) === 0 ) {
-            //If www. found at the beginning
-            $domain = substr( $domain, 4 );
-        }
-        return $domain;
-    }
-
-    /**
-     * Get IPv4 or IPv6 of this server.
-     * Attempts to return the public IP address for online servers and handles localhost too.
-     * improved since 4.6.0
-     * @return mixed|string
-     * @since 3.6.0
-     */
-    function aifs_ip_of_this_server() {
-        // Step 1: Check SERVER_ADDR if it exists and is not a loopback address
-        if ( isset( $_SERVER['SERVER_ADDR'] ) && !aifs_is_loopback( $_SERVER['SERVER_ADDR'] ) ) {
-            return $_SERVER['SERVER_ADDR'];
-        }
-        $domain = aifs_get_domain( true );
-        $factory = new Factory();
-        if ( $factory->is_ip_address( $domain ) ) {
-            return $domain;
-        } else {
-            // Get this website's address (domain name)
-            $websiteAddress = aifs_get_domain( false );
-            // Step 2: Try resolving the website address to an IP address
-            $ip = gethostbyname( $websiteAddress );
-            // Resolve hostname to IP (IPv4)
-            // If the resolved IP is a valid IP and not a loopback address, return it
-            if ( filter_var( $ip, FILTER_VALIDATE_IP ) && !aifs_is_loopback( $ip ) ) {
-                return $ip;
-            }
-            // Step 3: Try resolving the website address to an IP address using dns_get_record
-            $records = dns_get_record( $websiteAddress, DNS_A | DNS_AAAA );
-            if ( $records ) {
-                foreach ( $records as $record ) {
-                    if ( $record['type'] == 'A' ) {
-                        $ip = $record['ip'];
-                        // If the resolved IP is a valid IPV4 and not a loopback address, return it
-                        if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) && !aifs_is_loopback( $ip ) ) {
-                            return $ip;
-                        }
-                    } elseif ( $record['type'] == 'AAAA' ) {
-                        $ip = $record['ipv6'];
-                        // If the resolved IP is a valid IPV6 and not a loopback address, return it
-                        if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) && !aifs_is_loopback( $ip ) ) {
-                            return $ip;
-                        }
-                    }
-                }
-            }
-            // Step 4: Fallback to SERVER_ADDR (loopback for localhost)
-            //return $_SERVER['SERVER_ADDR'] ?? '127.0.0.1';  // requires PHP 7.0 or later. But this plugin supports PHP 5.6
-            return ( isset( $_SERVER['SERVER_ADDR'] ) ? $_SERVER['SERVER_ADDR'] : '127.0.0.1' );
-            //updated since 4.6.1
-        }
-    }
-
-    /**
-     * Function to check if an IP is a loopback address.
-     * Handles both IPv4 (127.0.0.0/8) and IPv6 (::1)
-     * @param $ip
-     * @return bool
-     * @since 4.6.0
-     */
-    function aifs_is_loopback(  $ip  ) {
-        if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) ) {
-            // Check if the IP starts with '127.' (127.0.0.0/8 range)
-            return strpos( $ip, '127.' ) !== false && strpos( $ip, '127.' ) === 0;
-        } elseif ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
-            // Normalize IPv6 address to compressed form
-            $normalized = inet_ntop( inet_pton( $ip ) );
-            return $normalized === '::1';
-        }
-        return false;
-    }
-
-    /**
      * Attach the JS
      * @param $hook
      */
     function aifs_add_js_enqueue(  $hook  ) {
-        // Only add to this admin.php admin page -> page=aifs_add_dns_service_provider
-        if ( !(aifs_is_free_version() && aifs_is_existing_user() && isset( $_GET['page'] ) && ($_GET['page'] === 'auto_install_free_ssl' || $_GET['page'] !== 'aifs_generate_ssl_manually' || $_GET['page'] !== 'aifs_force_https')) ) {
+        // L-12: `($_GET['page'] === 'auto_install_free_ssl' || $_GET['page'] !==
+        // 'aifs_generate_ssl_manually' || $_GET['page'] !== 'aifs_force_https')`
+        // was a tautology -- a page slug can't simultaneously equal both
+        // 'aifs_generate_ssl_manually' and 'aifs_force_https', so at least one of
+        // the two !== terms was always true, making the whole OR (and therefore
+        // the outer !(...) bypass below) always true for any free-version
+        // existing user on any admin.php?page=... screen -- not just this
+        // plugin's own pages, but any other plugin's too, since the allow-list a
+        // few lines down was then skipped entirely.
+        //
+        // The plan's literal suggested fix (AND instead of OR between the two
+        // !== terms) still leaves that same over-broad bypass for any page slug
+        // other than those exact two, e.g. another plugin's admin.php?page=X
+        // screen. Checked what script.js actually needs this bypass for: the
+        // '#aifs-tasks' fade-in and the settings AJAX toggle switches are only
+        // present on the plugin's own dashboard (auto_install_free_ssl); the
+        // aifs_generate_ssl_manually/aifs_force_https-specific behavior
+        // (aifs_confirm_initiate(), etc.) is already covered by the allow-list
+        // below regardless of this outer bypass. So the intended condition is
+        // simply "the plugin's own dashboard page" -- the two broken !== clauses
+        // added nothing they didn't already get from the allow-list, and are
+        // removed here rather than patched, to close the over-broad-enqueue gap
+        // completely instead of narrowing it to two page slugs.
+        if ( !(aifs_is_free_version() && aifs_is_existing_user() && isset( $_GET['page'] ) && $_GET['page'] === 'auto_install_free_ssl') ) {
+            // Note: for these AIFS submenu pages (registered under the custom
+            // 'auto_install_free_ssl' top-level menu), WordPress's admin_enqueue_scripts
+            // $hook parameter is never literally the string 'admin.php' -- it's
+            // the page hookname (e.g. 'toplevel_page_aifs_cpanel_settings'), per
+            // get_plugin_page_hookname(). So 'admin.php' !== $hook below is
+            // always true in real usage; the effective filter is the page
+            // allow-list that follows it. Left as-is (only the outer tautology
+            // above was the L-12 finding); verified this reading against
+            // wp-admin/includes/plugin.php's get_plugin_page_hookname() before
+            // leaving it alone, rather than assuming $hook could equal 'admin.php'.
             if ( !isset( $_GET['page'] ) || 'admin.php' !== $hook && $_GET['page'] !== 'aifs_add_dns_service_provider' && $_GET['page'] !== 'aifs_basic_settings' && $_GET['page'] !== 'auto_install_free_ssl' && $_GET['page'] !== 'aifs_cpanel_settings' && $_GET['page'] !== 'aifs_generate_ssl_manually' && $_GET['page'] !== 'aifs_force_https' ) {
                 return;
             }
@@ -671,58 +564,8 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
     }
 
     add_action( 'aifs_display_discount_offer_init', 'aifs_set_display_discount_offer_option' );
-    /**
-     * If there are admin notices in the option table, display them and remove from the option table to prevent them being displayed forever
-     *
-     * @since 2.0.0
-     */
-    function aifs_display_flash_notices() {
-        $notices = get_option( 'aifs_flash_notices' );
-        if ( $notices != false && is_array( $notices ) && count( $notices ) > 0 ) {
-            // Iterate through the notices to display them, if exist in option table
-            foreach ( $notices as $notice ) {
-                $style = ( $notice['type'] == "success" ? 'style="color: #46b450;"' : '' );
-                printf(
-                    '<div class="notice notice-%1$s %2$s" %3$s><p>%4$s</p></div>',
-                    $notice['type'],
-                    $notice['dismissible'],
-                    $style,
-                    $notice['notice']
-                );
-            }
-            // Now delete the option
-            delete_option( 'aifs_flash_notices' );
-        }
-    }
-
     // Add the above function to admin_notices
     add_action( 'admin_notices', 'aifs_display_flash_notices', 12 );
-    /**
-     * @param string $notice (The notice text)
-     * @param string $type (This can be "success", "info", "warning", "error". "success" is default.)
-     * @param boolean $is_dismissible (Set this TRUE to add is-dismissible functionality)
-     *
-     *
-     * Add a flash notice to the options table which will be displayed upon page refresh or redirect
-     *
-     * @since 2.0.0
-     */
-    /* function aifs_add_flash_notice(string $notice, string $type = "success", bool $is_dismissible = true ) {
-     * Removing parameter type hint to make compatible with PHP 5.6. Using scalar type hints like string is supported since PHP 7. */
-    function aifs_add_flash_notice(  $notice, $type = "success", $is_dismissible = true  ) {
-        // Get the notices already saved in the option table, if any, or return an empty array
-        $notices = get_option( 'aifs_flash_notices', array() );
-        $dismissible_text = ( $is_dismissible ? "is-dismissible" : "" );
-        // Add the new notice
-        array_push( $notices, array(
-            "notice"      => $notice,
-            "type"        => $type,
-            "dismissible" => $dismissible_text,
-        ) );
-        // Now update the option with the notices
-        update_option( 'aifs_flash_notices', $notices );
-    }
-
     /*// Schedule Cron Job Event (if not done already)
     	function aifs_custom_cron_job() {
     		if ( ! wp_next_scheduled( 'aifs_do_this_daily' ) ) {
@@ -734,6 +577,11 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
     // Scheduled Action Hook
     // Daily cron
     function aifs_do_this_daily() {
+        $errors = aifs_get_environment_errors();
+        if ( !empty( $errors ) ) {
+            error_log( 'Auto-Install Free SSL: skipped daily cron due to environment errors: ' . implode( ', ', $errors ) );
+            return;
+        }
         if ( aifs_is_free_version() ) {
             //Send renewal reminder email
             $email = new Email();
@@ -753,9 +601,29 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
      */
     function aifs_download_file_handler() {
         if ( isset( $_GET['aifsdownloadssl'] ) ) {
+            // C-3: this handler was guarded only by a nonce -- no capability check at
+            // all -- and built a filesystem path directly from unsanitized
+            // $_GET['domain']/$_GET['file'] values, allowing arbitrary file read
+            // (directory traversal). Require manage_options first.
+            if ( !current_user_can( 'manage_options' ) ) {
+                wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
+            }
             if ( !wp_verify_nonce( $_GET['aifsdownloadssl'], 'aifs_download_ssl' ) ) {
                 wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
             }
+            // Whitelist the requested file name to the exact set of certificate
+            // artefacts this handler is meant to serve.
+            $allowed_files = array(
+                'certificate.pem',
+                'private.pem',
+                'cabundle.pem',
+                'fullchain.pem'
+            );
+            $requested_file = ( isset( $_GET['file'] ) ? sanitize_file_name( wp_unslash( $_GET['file'] ) ) : '' );
+            if ( !in_array( $requested_file, $allowed_files, true ) ) {
+                wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
+            }
+            $domain = ( isset( $_GET['domain'] ) ? wp_unslash( $_GET['domain'] ) : '' );
             $app_settings = aifs_get_app_settings();
             //initialize the Acme Factory class
             $acmeFactory = new AcmeFactory($app_settings['homedir'] . '/' . $app_settings['certificate_directory'], $app_settings['acme_version'], $app_settings['is_staging']);
@@ -763,137 +631,27 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
             /*$certificates_directory = $acmeFactory->getCertificatesDir();
             
             			$file_path = $certificates_directory . AIFS_DS . $_GET['domain'] . AIFS_DS . $_GET['file'];*/
-            $domain_path = $acmeFactory->getDomainPath( $_GET['domain'] );
-            $file_path = $domain_path . AIFS_DS . $_GET['file'];
+            $domain_path = $acmeFactory->getDomainPath( $domain );
+            if ( false === $domain_path ) {
+                wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
+            }
+            $file_path = $domain_path . AIFS_DS . $requested_file;
+            // Defence in depth: the resolved path must actually live inside the
+            // certificates directory before we ever try to serve it.
+            $real_certificates_dir = realpath( $acmeFactory->getCertificatesDir() );
+            $real_file_path = realpath( $file_path );
+            if ( false === $real_certificates_dir || false === $real_file_path || 0 !== strpos( $real_file_path, $real_certificates_dir . DIRECTORY_SEPARATOR ) ) {
+                wp_die( __( "Access denied", 'auto-install-free-ssl' ) );
+            }
             $factory = new Factory();
-            $factory->download_file( $file_path );
+            $factory->download_file(
+                $file_path,
+                null,
+                false,
+                $real_certificates_dir
+            );
             //wp_redirect($this->aifs_remove_parameters_from_url(get_site_url().$_SERVER['REQUEST_URI'], ['aifsrated']));
         }
-    }
-
-    /**
-     * Return first name of the WordPress Admin
-     * @return string
-     * @since 3.0.0
-     */
-    function aifs_admin_first_name() {
-        $admin_email = get_option( 'admin_email' );
-        $admin = get_user_by( 'email', $admin_email );
-        if ( $admin !== false ) {
-            return $admin->first_name;
-        } else {
-            return "";
-        }
-    }
-
-    /**
-     * Return last name of the WordPress Admin
-     * @return string
-     * @since 3.2.14
-     */
-    function aifs_admin_last_name() {
-        $admin_email = get_option( 'admin_email' );
-        $admin = get_user_by( 'email', $admin_email );
-        if ( $admin !== false ) {
-            return $admin->last_name;
-        } else {
-            return "";
-        }
-    }
-
-    /**
-     * Check if the plugin is free version
-     * @return bool
-     * @since 3.0.0
-     */
-    function aifs_is_free_version() {
-        return aifssl_fs()->is_free_plan();
-    }
-
-    /**
-     * Check if licensed for unlimited domains (pro_unlimited plan) and user has set aifs_is_multi_domain = 1
-     * @return bool
-     * @since 3.0.0
-     */
-    function aifs_can_manage_multi_domain() {
-        //For free version always return false
-        return false;
-    }
-
-    /**
-     * Check if the user can use wildcard SSL
-     * @return bool
-     * @since 3.2.15
-     */
-    function aifs_use_wildcard() {
-        //For free version always return false
-        return false;
-    }
-
-    /**
-     * Check if the premium license is for unlimited websites
-     * @return bool
-     * @since 3.0.0
-     */
-    function aifs_license_is_unlimited() {
-        //For free version always return false
-        return false;
-    }
-
-    /**
-     * CSS style for Powered by text
-     * @return string
-     * @since 3.0.0
-     */
-    function aifs_powered_by_css_style() {
-        global $wp_version;
-        $version_parts = explode( ".", $wp_version );
-        $version_base = (int) $version_parts[0];
-        if ( $version_base === 5 || $version_base === 6 ) {
-            $style = 'class="header-footer"';
-        } else {
-            $style = 'id="message" class="updated below-h2 header-footer"';
-        }
-        return $style;
-    }
-
-    /**
-     * Returns the header
-     * @return string
-     * @since 3.0.6
-     */
-    function aifs_header() {
-        return '<h1 class="aifs-header" style=\'background-image: url("' . AIFS_URL . 'assets/img/icon.jpg"); background-color: #ffffff; margin: -3% -1.9% 3% -2%; padding: 2.1% 0; \'>
-            		<span style="margin-left: 14%; color: green;">' . AIFS_NAME . ' <sub style="color: gray; font-size: 0.65em;">' . AIFS_VERSION . '</sub></span> <span style="float: right; margin-right: 2%;"><a href="' . menu_page_url( 'aifs_force_https', false ) . '" class="button">' . __( "Force HTTPS", 'auto-install-free-ssl' ) . '</a></span>
-        		</h1>';
-    }
-
-    /**
-     * Returns Powered by text
-     * @return string
-     * @since 3.0.0
-     */
-    function aifs_powered_by() {
-        if ( aifssl_fs()->can_use_premium_code() ) {
-            $help_link = aifssl_fs()->contact_url();
-        } else {
-            $help_link = "https://freessl.tech/free-ssl-certificate-for-wordpress-website/#help";
-        }
-        if ( aifs_is_free_version() ) {
-            $documentation_link = "https://freessl.tech/wordpress-letsencrypt-free-ssl-certificate-documentation/?utm_source=users_website&utm_medium=dashboard&utm_campaign=aifs_free&utm_content=footer";
-        } else {
-            $documentation_link = "https://freessl.tech/free-ssl-certificate-for-wordpress-website/#documentation";
-        }
-        $review_link = "https://wordpress.org/support/plugin/auto-install-free-ssl/reviews/?filter=5#new-post";
-        $html = '<div ' . aifs_powered_by_css_style() . ' style="margin-top: 4%;">
-            <p>' . __( "Need Help?", 'auto-install-free-ssl' ) . ' <a href="' . $help_link . '" target="_blank">' . __( "click here", 'auto-install-free-ssl' ) . '</a> <span style="margin-left: 15%;">' . __( "For documentation", 'auto-install-free-ssl' ) . ', <a href="' . $documentation_link . '" target="_blank">' . __( "click here", 'auto-install-free-ssl' ) . '</a>.</span> ';
-        if ( get_option( 'aifs_display_review' ) !== false ) {
-            /* translators: %1$s: Opening HTML 'a' tag; %2$s: Closing 'a' tag; (Opening and closing 'a' tags create a hyperlink with the enclosed text.) */
-            $html .= '<span style="float: right; margin-right: 2%;">' . sprintf( __( 'Please rate us %1$s★★★★★%2$s on %1$sWordPress.org%2$s to help us spread the word.', 'auto-install-free-ssl' ), '<a href="' . $review_link . '" target="_blank">', '</a>' ) . '</span>';
-        }
-        $html .= '</p>
-        	</div>';
-        return $html;
     }
 
     /**
@@ -944,69 +702,19 @@ if ( !function_exists( 'aifs_home_menu' ) ) {
     }
 
     aifssl_fs()->add_filter( 'uninstall_reasons', 'aifs_deactivation_text' );
-    /**
-     * Get the CA termsOfService URL
-     * @return mixed|string
-     * @since 4.3.0
-     */
-    function aifs_get_ca_terms_of_service_url() {
-        // Fetch the option from the WordPress database
-        $tos = get_option( 'aifs_ca_terms_of_service_url' );
-        $current_time = time();
-        $two_days_ago = $current_time - 2 * 24 * 60 * 60;
-        // 2 days ago in seconds
-        // Check if the option exists and 'last_updated' is greater than two days ago
-        if ( $tos && is_array( $tos ) && isset( $tos['url'] ) && isset( $tos['last_updated'] ) && $tos['last_updated'] >= $two_days_ago ) {
-            return $tos['url'];
-        } else {
-            // If no option exists or it's older than 2 days, update the option
-            $client = new Client(AIFS_LE_ACME_V2_LIVE);
-            $terms_url = $client->getTermsOfService();
-            // Update the option in the database
-            $tos_data = array(
-                'url'          => $terms_url,
-                'last_updated' => $current_time,
-            );
-            update_option( 'aifs_ca_terms_of_service_url', $tos_data, false );
-            // Return the updated URL
-            return $terms_url;
-        }
-    }
-
-    /**
-     * Get this plugin's activation count (free and premium version) to find out whether both version is active.
-     * @return int
-     * @since 4.5.0
-     */
-    function aifs_this_plugin_activation_count() {
-        $count = 0;
-        if ( is_plugin_active( AIFS_FREE_PLUGIN_BASENAME ) ) {
-            $count++;
-        }
-        if ( is_plugin_active( AIFS_PREMIUM_PLUGIN_BASENAME ) ) {
-            $count++;
-        }
-        return $count;
-    }
-
-    /**
-     * Get this plugin's installation count (free and premium version) to find out whether both version is installed (both active and inactive).
-     * @return int
-     * @since 4.5.0
-     */
-    function aifs_this_plugin_installation_count() {
-        $count = 0;
-        // Get the list of all installed plugins (both active and inactive)
-        $installed_plugins = get_plugins();
-        if ( isset( $installed_plugins[AIFS_FREE_PLUGIN_BASENAME] ) ) {
-            $count++;
-        }
-        if ( isset( $installed_plugins[AIFS_PREMIUM_PLUGIN_BASENAME] ) ) {
-            $count++;
-        }
-        return $count;
-    }
-
+}
+/** Environment requirements — hard-stop in admin (except Plugins / AJAX); soft-bail elsewhere. @since 4.7.1 */
+if ( function_exists( 'aifs_maybe_stop_for_environment_errors' ) ) {
+    add_action( 'admin_init', 'aifs_maybe_stop_for_environment_errors', 1 );
+}
+if ( function_exists( 'aifs_admin_notice_environment_errors' ) ) {
+    add_action( 'admin_notices', 'aifs_admin_notice_environment_errors' );
+    add_action( 'network_admin_notices', 'aifs_admin_notice_environment_errors' );
+}
+/** Proactive WP_HTTP_BLOCK_EXTERNAL / ACME host allow-list warning. @since 5.0.0 */
+if ( function_exists( 'aifs_admin_notice_wp_http_block_external' ) ) {
+    add_action( 'admin_notices', 'aifs_admin_notice_wp_http_block_external' );
+    add_action( 'network_admin_notices', 'aifs_admin_notice_wp_http_block_external' );
 }
 if ( is_admin() ) {
     // activation hook
@@ -1026,32 +734,51 @@ if ( is_admin() ) {
     add_action( 'admin_menu', 'aifs_home_menu' );
     /** Implementing Translations - load textdomain */
     add_action( 'init', 'aifs_load_textdomain' );
-    add_action( 'init', 'aifs_maybe_stop_for_environment_errors', 11 );
-    // @since 4.6.2
+    /**
+     * Register admin pages before heavier AdminNotice bootstrap.
+     * Order of these init callbacks controls submenu order (Generate SSL, then Force HTTPS, then Log).
+     * accepted_args=0 prevents WP from passing null into getInstance( $register_hooks ).
+     * @since 4.7.1
+     */
+    /** Generate SSL manually (free plan) — first submenu after the dashboard */
+    add_action(
+        'init',
+        array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\GenerateSSLmanually', 'getInstance'),
+        11,
+        0
+    );
+    /** Force HTTPS page */
+    add_action(
+        'init',
+        array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\ForceHttpsPage', 'getInstance'),
+        11,
+        0
+    );
+    /** Log page */
+    add_action(
+        'init',
+        array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\Log', 'getInstance'),
+        11,
+        0
+    );
     /** Display Admin Notice */
     //new AdminNotice();
     //AdminNotice::getInstance();
-    add_action( 'init', array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\AdminNotice', 'getInstance'), 12 );
+    add_action(
+        'init',
+        array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\AdminNotice', 'getInstance'),
+        12,
+        0
+    );
     // @since 4.6.2
-    /** Generate SSL manually */
-    //new GenerateSSLmanually();
-    //GenerateSSLmanually::getInstance();
-    add_action( 'init', array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\GenerateSSLmanually', 'getInstance'), 12 );
-    // @since 4.6.2
+    /**
+     * Premium admin menus: always register when licensed; soft-fail UI when the environment
+     * is incompatible (do not hide menus). @since 4.7.1
+     */
     //Add the JS
     add_action( 'admin_enqueue_scripts', 'aifs_add_js_enqueue' );
     add_action( 'admin_enqueue_scripts', 'aifs_admin_styles' );
     add_action( 'admin_init', 'aifs_download_file_handler' );
-    /** Force HTTPS page */
-    //new ForceHttpsPage();
-    //ForceHttpsPage::getInstance();
-    add_action( 'init', array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\ForceHttpsPage', 'getInstance'), 12 );
-    // @since 4.6.2
-    /** Log page */
-    //new Log();
-    //Log::getInstance();
-    add_action( 'init', array('AutoInstallFreeSSL\\FreeSSLAuto\\Admin\\Log', 'getInstance'), 12 );
-    // @since 4.6.2
     /**
      * Filter to Customize Freemius Checkout Parameters
      * @since 4.6.1

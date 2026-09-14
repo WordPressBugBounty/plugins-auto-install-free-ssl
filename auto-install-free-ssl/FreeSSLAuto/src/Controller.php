@@ -49,14 +49,24 @@ class Controller {
     }
 
     /**
+     * Inject a custom logger (used by unit tests).
+     *
+     * @param Logger $logger Logger instance.
+     */
+    public function setLogger( $logger ) {
+        $this->logger = $logger;
+    }
+
+    /**
      * Make array of the domains pointing to the same document root of a domain.
      * Improved since 4.0.0
      * @param array $domains_array_raw
      * @param array $domains_to_exclude
+     * @param string|null $ip_of_this_server Optional server IP (defaults to aifs_ip_of_this_server()).
      *
      * @return array
      */
-    public function domainsArray( $domains_array_raw, $domains_to_exclude ) {
+    public function domainsArray( $domains_array_raw, $domains_to_exclude, $ip_of_this_server = null ) {
         $domains_array = [];
         foreach ( $domains_array_raw as $domain ) {
             //if ( !(aifs_can_manage_multi_domain() && \in_array( $domain, $domains_to_exclude, true )) || $this->sslRequiredForFirstTime() ) {
@@ -70,8 +80,10 @@ class Controller {
         }
         //remove offline domains
         $domains_online = [];
-        $ip_of_this_server = aifs_ip_of_this_server();
-        //Improved since 3.6.0
+        if ( null === $ip_of_this_server ) {
+            $ip_of_this_server = aifs_ip_of_this_server();
+            //Improved since 3.6.0
+        }
         foreach ( $domains_array as $key => $domain ) {
             if ( false === strpos( $domain, '*.' ) && (bool) get_option( 'aifs_selected_verification_method_dns01' ) === false ) {
                 //check if domain is online, only for non-wildcard domains
@@ -83,7 +95,7 @@ class Controller {
                     //if ( (bool) get_option('aifs_verify_ip_for_mail_dot_domain_alias_only') === false || (strpos( $domain, 'mail.' ) !== false && strpos( $domain, 'mail.' ) === 0) ) {
                     //if ($ip_of_this_server !== false && ((bool) get_option('aifs_verify_ip_for_mail_dot_domain_alias_only') === false || (strpos( $domain, 'mail.' ) !== false && strpos( $domain, 'mail.' ) === 0)) ) {
                     if ( $ip_of_this_server !== false && ((bool) get_option( 'aifs_verify_ip_for_all_domain_alias' ) || strpos( $domain, 'mail.' ) !== false && strpos( $domain, 'mail.' ) === 0) ) {
-                        $dns = dns_get_record( $domain, DNS_A );
+                        $dns = $this->lookupDnsARecord( $domain );
                         if ( $dns[0]['type'] == "A" && $dns[0]['ip'] == $ip_of_this_server ) {
                             $domains_online[] = $domain;
                         } else {
@@ -138,6 +150,17 @@ class Controller {
             $domains_online = array_merge( $group_1, $group_2 );
         }
         return $domains_online;
+    }
+
+    /**
+     * Lookup DNS A records for a hostname.
+     * Overridable seam for unit tests.
+     *
+     * @param string $hostname Hostname.
+     * @return array
+     */
+    protected function lookupDnsARecord( $hostname ) {
+        return dns_get_record( $hostname, DNS_A );
     }
 
     /**

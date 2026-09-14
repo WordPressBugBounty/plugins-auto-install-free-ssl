@@ -56,9 +56,18 @@ class ForceSSL {
     private $factory;
 
     // Private constructor to prevent multiple instantiations @since 4.5.0
-    private function __construct() {
+    /**
+     * @param bool $register_hooks Whether to register admin/front hooks (pass false in unit tests).
+     */
+    private function __construct( $register_hooks = true ) {
         if ( !defined( 'ABSPATH' ) ) {
             die( "Access denied" );
+        }
+        $this->admin_email = get_option( 'admin_email' );
+        $this->factory = new Factory();
+        $this->logger = new Logger();
+        if ( !$register_hooks ) {
+            return;
         }
         //Following function should be called for any value of aifs_force_ssl, so that revert to HTTP possible from admin dashboard
         add_action( 'admin_init', array($this, 'aifs_force_ssl_controller') );
@@ -75,21 +84,137 @@ class ForceSSL {
             }
             add_action( "shutdown", array($this, 'end_buffer_wp'), 999 );
         }
-        $this->admin_email = get_option( 'admin_email' );
-        $this->factory = new Factory();
-        $this->logger = new Logger();
     }
 
     /**
      * This method ensures that only one instance of the class is created.
      * @since 4.5.0
+     * @param bool $register_hooks Whether to register hooks on first construction.
      * @return ForceSSL
      */
-    public static function getInstance() {
+    public static function getInstance( $register_hooks = true ) {
         if ( !isset( self::$instance ) ) {
-            self::$instance = new self();
+            // When hooked to do_action( 'init' ) with accepted_args >= 1, WP may pass null.
+            if ( null === $register_hooks ) {
+                $register_hooks = true;
+            }
+            self::$instance = new self((bool) $register_hooks);
         }
         return self::$instance;
+    }
+
+    /**
+     * Inject a custom logger (used by unit tests).
+     *
+     * @param Logger $logger Logger instance.
+     */
+    public function setLogger( $logger ) {
+        $this->logger = $logger;
+    }
+
+    /**
+     * Inject a custom admin factory (used by unit tests).
+     *
+     * @param Factory $factory Factory instance.
+     */
+    public function setFactory( $factory ) {
+        $this->factory = $factory;
+    }
+
+    /**
+     * WP_SITEURL/WP_HOME currently defined in wp-config.php, if any.
+     *
+     * Split out from update_siteurl_and_home() -- and kept protected, not
+     * private -- so a test subclass can stub it with fabricated values
+     * instead of having to define real PHP constants, which can't be
+     * un-defined again for the rest of the test run.
+     *
+     * @return array Constant name => current value, for each one defined.
+     */
+    protected function get_defined_url_constants() {
+        $constants = array();
+        if ( defined( 'WP_SITEURL' ) ) {
+            $constants['WP_SITEURL'] = WP_SITEURL;
+        }
+        if ( defined( 'WP_HOME' ) ) {
+            $constants['WP_HOME'] = WP_HOME;
+        }
+        return $constants;
+    }
+
+    /**
+     * Of the given WP_SITEURL/WP_HOME constants, which ones already disagree
+     * with the scheme we're about to switch to.
+     *
+     * @param bool  $to_https          True when switching to https, false for http.
+     * @param array $defined_constants Constant name => current value (see get_defined_url_constants()).
+     * @return array Subset of $defined_constants whose value doesn't match $to_https.
+     */
+    private function find_conflicting_url_constants( $to_https, array $defined_constants ) {
+        $target_scheme = ( $to_https ? 'https:' : 'http:' );
+        $conflicting = array();
+        foreach ( $defined_constants as $constant_name => $value ) {
+            if ( stripos( (string) $value, $target_scheme ) !== 0 ) {
+                $conflicting[$constant_name] = $value;
+            }
+        }
+        return $conflicting;
+    }
+
+    /**
+     * Switch the 'siteurl'/'home' options to the given scheme.
+     *
+     * WordPress registers 'option_siteurl'/'option_home' filters (see
+     * wp-includes/default-filters.php) that force get_option('siteurl')/
+     * get_option('home') -- and therefore site_url()/home_url() too -- to
+     * return WP_SITEURL/WP_HOME whenever those constants are defined in
+     * wp-config.php, regardless of what's stored in the DB. update_option()
+     * would still silently write the new value to the DB row in that case,
+     * but it would have zero effect on the site, so skip it and log a
+     * warning instead. Doesn't raise its own admin notice -- callers fold
+     * the returned constant names into the single activate/deactivate/revert
+     * notice they already show, rather than stacking a second, contradictory
+     * one next to it (a plain "success" alongside an unrelated "error" reads
+     * as a bug even though both are accurate).
+     *
+     * @param bool $to_https True to force https, false to revert to http.
+     * @return string[] Names of the constants that blocked the update (empty if none).
+     */
+    private function update_siteurl_and_home( $to_https ) {
+        $conflicting = $this->find_conflicting_url_constants( $to_https, $this->get_defined_url_constants() );
+        if ( !empty( $conflicting ) ) {
+            $constant_list = array();
+            foreach ( $conflicting as $constant_name => $value ) {
+                $constant_list[] = $constant_name . '=' . $value;
+            }
+            $this->logger->write_log( 'warning', "Force HTTPS: 'siteurl'/'home' options were not updated because " . implode( ', ', $constant_list ) . " is hard-coded in wp-config.php, so get_option('siteurl')/get_option('home') always return the constant and writing the option would have no effect. Edit wp-config.php directly instead.", array(
+                'event' => 'ping',
+            ) );
+            return array_keys( $conflicting );
+        }
+        if ( $to_https ) {
+            update_option( 'siteurl', str_ireplace( 'http:', 'https:', get_option( 'siteurl' ) ) );
+            update_option( 'home', str_ireplace( 'http:', 'https:', get_option( 'home' ) ) );
+        } else {
+            update_option( 'siteurl', str_ireplace( 'https:', 'http:', get_option( 'siteurl' ) ) );
+            update_option( 'home', str_ireplace( 'https:', 'http:', get_option( 'home' ) ) );
+        }
+        return array();
+    }
+
+    /**
+     * Caveat text appended to the activate/deactivate/revert notice when
+     * update_siteurl_and_home() had to skip the option write.
+     *
+     * @param string[] $locked_constants Constant names, from update_siteurl_and_home()'s return value.
+     * @return string Translated caveat sentence.
+     */
+    private function locked_url_constants_notice_text( $locked_constants ) {
+        return sprintf( 
+            /* translators: %s: A comma-separated list of PHP constant names, e.g., WP_SITEURL, WP_HOME */
+            __( "Note: your site's address is hard-coded via %s in wp-config.php, so this plugin couldn't update it there to match. Please edit that constant's value in wp-config.php directly if you'd like Settings > General to reflect this too.", 'auto-install-free-ssl' ),
+            implode( ', ', $locked_constants )
+         );
     }
 
     /**
@@ -102,12 +227,18 @@ class ForceSSL {
     public function revert_force_ssl() {
         $revert_nonce = ( get_option( 'aifs_revert_http_nonce' ) ? get_option( 'aifs_revert_http_nonce' ) : false );
         if ( isset( $_GET['aifs_revert_http_nonce'] ) && $revert_nonce != false ) {
-            if ( $revert_nonce == $_GET['aifs_revert_http_nonce'] ) {
+            // L-4: this is an unauthenticated endpoint (anyone with the link can
+            // downgrade siteurl/home to HTTP), so the secret comparison must be
+            // timing-attack safe. hash_equals() requires the known string first.
+            if ( hash_equals( (string) $revert_nonce, (string) $_GET['aifs_revert_http_nonce'] ) ) {
                 update_option( 'aifs_force_ssl', 0 );
                 //Update siteurl and home options with HTTP
-                update_option( 'siteurl', str_ireplace( 'https:', 'http:', get_option( 'siteurl' ) ) );
-                update_option( 'home', str_ireplace( 'https:', 'http:', get_option( 'home' ) ) );
-                exit( __( "Your website reverted to HTTP successfully. Now you can access your website over http://", 'auto-install-free-ssl' ) );
+                $locked_url_constants = $this->update_siteurl_and_home( false );
+                $revert_message = __( "Your website reverted to HTTP successfully. Now you can access your website over http://", 'auto-install-free-ssl' );
+                if ( !empty( $locked_url_constants ) ) {
+                    $revert_message .= ' ' . $this->locked_url_constants_notice_text( $locked_url_constants );
+                }
+                exit( $revert_message );
             } else {
                 wp_die( __( "Access was denied due to an invalid secret code. Please use the link in the latest email (when you activated force HTTPS last time).", 'auto-install-free-ssl' ) );
             }
@@ -158,9 +289,20 @@ class ForceSSL {
      * @since 2.0.0
      */
     public function force_ssl_wp() {
-        if ( !is_ssl() ) {
-            $redirect_url = "https://" . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
-            wp_redirect( $redirect_url, 301 );
+        if ( is_ssl() ) {
+            return;
+        }
+        $request_uri = '/';
+        if ( isset( $_SERVER['REQUEST_URI'] ) ) {
+            $request_uri = wp_unslash( $_SERVER['REQUEST_URI'] );
+        }
+        // Use the configured site host so wp_safe_redirect accepts the target.
+        $home_host = wp_parse_url( home_url(), PHP_URL_HOST );
+        if ( empty( $home_host ) ) {
+            return;
+        }
+        $redirect_url = 'https://' . $home_host . $request_uri;
+        if ( wp_safe_redirect( $redirect_url, 301 ) ) {
             exit;
         }
     }
@@ -346,7 +488,10 @@ class ForceSSL {
      */
     public function aifs_force_ssl_controller() {
         /*
-         * Override: http://www.example.com/wp-admin/admin.php?page=aifs_force_https&aifsaction=aifs_force_https_override&checked_ssl_manually=done&valid_ssl_installed=yes
+         * Override (H-10: now requires a nonce -- generate the URL with
+         * wp_nonce_url( admin_url('admin.php?page=aifs_force_https&aifsaction=aifs_force_https_override&checked_ssl_manually=done&valid_ssl_installed=yes'), 'aifs_force_https_override', 'aifsoverridenonce' )
+         * rather than pasting the bare URL below):
+         * http://www.example.com/wp-admin/admin.php?page=aifs_force_https&aifsaction=aifs_force_https_override&checked_ssl_manually=done&valid_ssl_installed=yes&aifsoverridenonce=...
          */
         if ( isset( $_POST['aifs-activate-force-ssl'] ) ) {
             if ( !wp_verify_nonce( $_POST['aifs-activate-force-ssl'], 'aifsforcessl' ) ) {
@@ -408,35 +553,42 @@ class ForceSSL {
             /*if(!get_option('aifs_display_review'))
             		add_option('aifs_display_review', 1);*/
             if ( $force_ssl == 1 ) {
+                //Update siteurl and home options with HTTPS - this is required to fix dynamic CSS issue with premium themes.
+                //Done before building the notice below so a wp-config.php lock (WP_SITEURL/WP_HOME) can be folded into the
+                //same message instead of showing a second, contradictory one alongside the success notice.
+                $locked_url_constants = $this->update_siteurl_and_home( true );
                 $revert_nonce = uniqid( 'aifs' ) . time() . uniqid();
                 if ( update_option( 'aifs_revert_http_nonce', $revert_nonce ) ) {
                     $this->aifs_send_revert_nonce_by_email( $revert_nonce );
                     $success_text = __( "Congratulations! Force HTTPS has been activated successfully.", 'auto-install-free-ssl' );
+                    if ( !empty( $locked_url_constants ) ) {
+                        $success_text .= ' ' . $this->locked_url_constants_notice_text( $locked_url_constants );
+                    }
                     $this->logger->write_log( 'info', $success_text, [
                         'event' => 'ping',
                     ] );
                     //Display success/activated message (notice)
-                    aifs_add_flash_notice( $success_text );
+                    aifs_add_flash_notice( $success_text, ( empty( $locked_url_constants ) ? 'success' : 'warning' ) );
                 }
-                //Update siteurl and home options with HTTPS - this is required to fix dynamic CSS issue with premium themes
-                update_option( 'siteurl', str_ireplace( 'http:', 'https:', get_option( 'siteurl' ) ) );
-                update_option( 'home', str_ireplace( 'http:', 'https:', get_option( 'home' ) ) );
                 //redirect to plugin main page, so that HTTPS be forced immediately. This will send the user to the login page over HTTPS.
                 if ( !is_ssl() ) {
                     //$redirect_url = "https://".aifs_get_domain()."/wp-login.php?redirect_to=".urlencode(admin_url('admin.php?page=auto_install_free_ssl'));
-                    wp_redirect( admin_url( 'admin.php?page=auto_install_free_ssl' ) );
-                    exit;
+                    if ( wp_safe_redirect( admin_url( 'admin.php?page=auto_install_free_ssl' ) ) ) {
+                        exit;
+                    }
                 }
             } else {
                 //Update siteurl and home options with HTTP
-                update_option( 'siteurl', str_ireplace( 'https:', 'http:', get_option( 'siteurl' ) ) );
-                update_option( 'home', str_ireplace( 'https:', 'http:', get_option( 'home' ) ) );
+                $locked_url_constants = $this->update_siteurl_and_home( false );
                 $success_text = __( "Force HTTPS has been Deactivated successfully, and you have reverted to HTTP.", 'auto-install-free-ssl' );
+                if ( !empty( $locked_url_constants ) ) {
+                    $success_text .= ' ' . $this->locked_url_constants_notice_text( $locked_url_constants );
+                }
                 $this->logger->write_log( 'info', $success_text, [
                     'event' => 'ping',
                 ] );
                 //Display success message (Deactivated)
-                aifs_add_flash_notice( $success_text );
+                aifs_add_flash_notice( $success_text, ( empty( $locked_url_constants ) ? 'success' : 'warning' ) );
             }
         }
     }
@@ -453,10 +605,10 @@ class ForceSSL {
     public function aifs_send_revert_nonce_by_email( $revert_nonce ) {
         $app_settings = aifs_get_app_settings();
         //Send email to admin email id and Let's Encrypt registrant email id (provided in basic settings) if both are different
-        if ( in_array( $this->admin_email, $app_settings['admin_email'] ) ) {
-            $to = implode( ',', $app_settings['admin_email'] );
+        if ( in_array( $this->admin_email, (array) $app_settings['admin_email'] ) ) {
+            $to = implode( ',', (array) $app_settings['admin_email'] );
         } else {
-            $to = $this->admin_email . "," . implode( ',', $app_settings['admin_email'] );
+            $to = $this->admin_email . "," . implode( ',', (array) $app_settings['admin_email'] );
         }
         $revert_url = str_replace( 'https:', 'http:', site_url() ) . "/?aifs_revert_http_nonce=" . $revert_nonce;
         /* translators: %1$s: Name of this plugin, i.e., 'Auto-Install Free SSL'; %2$s: A domain name, e.g., example.com */

@@ -47,6 +47,24 @@ class Email {
     }
 
     /**
+     * Inject a custom logger (used by unit tests).
+     *
+     * @param Logger $logger Logger instance.
+     */
+    public function setLogger( $logger ) {
+        $this->logger = $logger;
+    }
+
+    /**
+     * Inject a custom admin factory (used by unit tests).
+     *
+     * @param Factory $factory Factory instance.
+     */
+    public function setFactory( $factory ) {
+        $this->factory = $factory;
+    }
+
+    /**
      * Add review request in automated email notification
      * Updated since 4.0.0
      *
@@ -87,7 +105,15 @@ class Email {
         $app_settings = aifs_get_app_settings();
         $certificate = $this->factory->this_domain_get_ssl_file_path();
         if ( $certificate ) {
-            $cert_array = openssl_x509_parse( openssl_x509_read( file_get_contents( $certificate ) ) );
+            // M-5: guard each step -- a truthy path doesn't guarantee a parseable
+            // certificate (corrupt/empty file, unreadable, etc.); indexing a failed
+            // openssl_x509_parse() (false) is a fatal TypeError on PHP 8.
+            $cert_resource = @openssl_x509_read( file_get_contents( $certificate ) );
+            $cert_array = ( false !== $cert_resource ? openssl_x509_parse( $cert_resource ) : false );
+            if ( false === $cert_array || !isset( $cert_array['validTo_time_t'] ) ) {
+                $this->logger->log_v2( 'error', 'send_ssl_renewal_reminder_email(): could not parse certificate at ' . $certificate );
+                return;
+            }
             $expiry_timestamp = $cert_array['validTo_time_t'];
             //$days_before_expiry_to_renew_ssl = 30;
             //$renewal_timestamp = $expiry_timestamp - ($days_before_expiry_to_renew_ssl * 24 * 60 * 60);
@@ -163,10 +189,10 @@ class Email {
                 $body .= $this->add_email_signature();
                 $body .= "</body></html>";
                 //Send email to admin email id and Let's Encrypt registrant email id (provided in basic settings) if both are different
-                if ( in_array( $this->admin_email, $app_settings['admin_email'] ) ) {
-                    $to = implode( ',', $app_settings['admin_email'] );
+                if ( in_array( $this->admin_email, (array) $app_settings['admin_email'] ) ) {
+                    $to = implode( ',', (array) $app_settings['admin_email'] );
                 } else {
-                    $to = $this->admin_email . "," . implode( ',', $app_settings['admin_email'] );
+                    $to = $this->admin_email . "," . implode( ',', (array) $app_settings['admin_email'] );
                 }
                 // Set content-type header
                 $headers = [];

@@ -64,8 +64,16 @@ interface ClientInterface {
     /**
      * Return the HTTP status code of the last request.
      *
-     * @return int
+     * @return int|null
      */
     public function getLastCode();
+
+    /**
+     * Clear the last HTTP status code so it can't be mistaken for a request that was
+     * aborted before being dispatched.
+     *
+     * @return void
+     */
+    public function invalidateLastCode();
 
 }

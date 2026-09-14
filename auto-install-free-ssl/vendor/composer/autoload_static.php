@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit8d28e1be440670bf7be1777b0adb378f
+class ComposerStaticInit1a6e591c9c4c425d03284d96364d7d09
 {
     public static $prefixLengthsPsr4 = array (
         'A' =>
@@ -55,6 +55,7 @@ class ComposerStaticInit8d28e1be440670bf7be1777b0adb378f
         'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\Admin\\cPanelSettings' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/Admin/cPanelSettings.php',
         'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\DnsApi' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/DnsApi.php',
         'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\DnsCurl' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/DnsCurl.php',
+        'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\DnsCurlBuilderTrait' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/DnsCurlBuilderTrait.php',
         'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\cloudflare' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/cloudflare.php',
         'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\godaddy' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/godaddy.php',
         'AutoInstallFreeSSL\\FreeSSLAuto\\Premium\\DnsApi\\namecheap' => __DIR__ . '/../..' . '/FreeSSLAuto/src/Premium/DnsApi/namecheap.php',
@@ -66,9 +67,9 @@ class ComposerStaticInit8d28e1be440670bf7be1777b0adb378f
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit8d28e1be440670bf7be1777b0adb378f::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit8d28e1be440670bf7be1777b0adb378f::$prefixDirsPsr4;
-            $loader->classMap = ComposerStaticInit8d28e1be440670bf7be1777b0adb378f::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit1a6e591c9c4c425d03284d96364d7d09::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit1a6e591c9c4c425d03284d96364d7d09::$prefixDirsPsr4;
+            $loader->classMap = ComposerStaticInit1a6e591c9c4c425d03284d96364d7d09::$classMap;
 
         }, null, ClassLoader::class);
     }

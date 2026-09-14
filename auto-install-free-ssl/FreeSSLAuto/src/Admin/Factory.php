@@ -37,11 +37,105 @@ use DateTime;
 class Factory {
     public $logger;
 
+    /**
+     * cPanel 134 changelog URL -- HTTP Basic authentication (username/password) is refused by
+     * default on the cPanel interface (ports 2082/2083) starting with this release.
+     *
+     * @since 5.0.0
+     */
+    const CPANEL_134_CHANGELOG_URL = 'https://docs.cpanel.net/changelogs/134-change-log/';
+
+    /**
+     * cPanel 136 changelog URL, referenced alongside the 134 changelog for completeness.
+     *
+     * @since 5.0.0
+     */
+    const CPANEL_136_CHANGELOG_URL = 'https://docs.cpanel.net/changelogs/136-change-log/';
+
     public function __construct() {
         if ( !defined( 'ABSPATH' ) ) {
             die( "Access denied" );
         }
         $this->logger = new Logger();
+    }
+
+    /**
+     * Inject a custom logger (used by unit tests).
+     *
+     * @param Logger $logger Logger instance.
+     */
+    public function setLogger( $logger ) {
+        $this->logger = $logger;
+    }
+
+    /**
+     * "Most likely cause" HTML block for the cPanel 134+ HTTP Basic authentication removal.
+     * Since cPanel version 134 (2026-08-24), a password can no longer be used for UAPI calls on
+     * the cPanel interface by default. Shared by every admin notice / settings-page error banner /
+     * notification email surface that reports a cPanel connection failure, so this wording exists
+     * in exactly one place in the codebase.
+     *
+     * @since 5.0.0
+     * @param bool $wrap_in_paragraph Whether to wrap the block in its own '<p>' tag. Pass false
+     *                                to embed it inline inside a caller's own wrapping markup.
+     * @return string
+     */
+    public function cpanel_basic_auth_disabled_cause_html( $wrap_in_paragraph = true ) {
+        /* translators: %1$s/%2$s: opening/closing 'strong' tag around "Most likely cause:"; %3$s/%4$s: opening/closing 'strong' tag around "API Token"; %5$s/%6$s: opening/closing 'a' tag linking to the cPanel 134 changelog; %7$s/%8$s: opening/closing 'a' tag linking to the cPanel 136 changelog. ('cPanel' is web hosting control panel software developed by cPanel, LLC.) */
+        $content = sprintf(
+            esc_html__( '%1$sMost likely cause:%2$s Starting with cPanel 134 (released 2026-08-24), cPanel disables HTTP Basic authentication (username and password) for its API (ports 2082 and 2083) by default, so a password can no longer be used for API calls. Please create a cPanel %3$sAPI Token%4$s and use it instead. For step-by-step instructions, see the "How to Create API Tokens in cPanel" video tutorial in the sidebar of the cPanel Settings page, or refer to the %5$scPanel 134 changelog%6$s and %7$scPanel 136 changelog%8$s for full details.', 'auto-install-free-ssl' ),
+            '<strong>',
+            '</strong>',
+            '<strong>',
+            '</strong>',
+            '<a href="' . esc_url( self::CPANEL_134_CHANGELOG_URL ) . '" target="_blank" rel="noopener noreferrer">',
+            '</a>',
+            '<a href="' . esc_url( self::CPANEL_136_CHANGELOG_URL ) . '" target="_blank" rel="noopener noreferrer">',
+            '</a>'
+        );
+        if ( $wrap_in_paragraph ) {
+            return '<p class="aifs-cpanel-basic-auth-cause">' . $content . '</p>';
+        }
+        return $content;
+    }
+
+    /**
+     * Same fact as cpanel_basic_auth_disabled_cause_html(), as a short, plain-text, untranslated
+     * string for the plugin log (per this codebase's "don't translate log messages" convention).
+     *
+     * @since 5.0.0
+     * @return string
+     */
+    public function cpanel_basic_auth_disabled_cause_log_text() {
+        return "Likely cause: Starting with cPanel 134 (released 2026-08-24), cPanel disables HTTP Basic authentication (username and password) for its API by default. Use an API Token instead. See 'How to Create API Tokens in cPanel' (video tutorial in the cPanel Settings sidebar), " . self::CPANEL_134_CHANGELOG_URL . ' and ' . self::CPANEL_136_CHANGELOG_URL;
+    }
+
+    /**
+     * Redact secrets from log/debug strings (Authorization headers, API tokens,
+     * private-key paths, and PEM private-key file contents). Harmless public
+     * certificate paths such as certificate.pem / fullchain.pem are left intact
+     * so troubleshooting logs stay useful.
+     *
+     * @param string $message Raw message.
+     * @return string
+     */
+    public function redactSecrets( $message ) {
+        $message = (string) $message;
+        $patterns = array(
+            '/Authorization:\\s*[^\\r\\n<]*/i'                                                                         => 'Authorization: [REDACTED]',
+            '/X-Auth-Email:\\s*[^\\r\\n<]*/i'                                                                          => 'X-Auth-Email: [REDACTED]',
+            '/X-Auth-Key:\\s*[^\\r\\n<]*/i'                                                                            => 'X-Auth-Key: [REDACTED]',
+            '/(?:apiuser|apikey|ApiUser|ApiKey)=[^&\\s<]+/i'                                                           => '[credential]=[REDACTED]',
+            '/pwd_reset_token=[^&\\s<]+/i'                                                                             => 'pwd_reset_token=[REDACTED]',
+            '/token=[^&\\s<]+/i'                                                                                       => 'token=[REDACTED]',
+            '/(?:\\/[^\\s<\'"]+)?private\\.pem\\b/i'                                                                   => '[private-key-path]',
+            '/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[^-]*-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/s' => '[REDACTED PRIVATE KEY]',
+            '/"body"\\s*=>\\s*\'[^\']{200,}\'/s'                                                                       => '"body" => \'[REDACTED API RESPONSE]\'',
+        );
+        foreach ( $patterns as $pattern => $replacement ) {
+            $message = preg_replace( $pattern, $replacement, $message );
+        }
+        return $message;
     }
 
     /**
@@ -378,8 +472,24 @@ class Factory {
                 }
             }
         }
+        $this->persistCPanelHost( $cpanel_settings, $cpanel_host, $purge_cache );
+        return $cpanel_host;
+    }
+
+    /**
+     * Persist the resolved cPanel host back into the 'cpanel_settings_auto_install_free_ssl'
+     * option. Isolated from getcPanelHost() so it can be exercised without the network
+     * probing that method otherwise performs, and so the C-2 fix (never let a decrypted
+     * credential reach update_option()) is directly unit-testable.
+     *
+     * @param array|false $cpanel_settings Existing option value (or false if unset).
+     * @param string|bool $cpanel_host     Resolved cPanel host.
+     * @param bool        $purge_cache     Whether this call was a forced re-resolution.
+     * @return void
+     */
+    protected function persistCPanelHost( $cpanel_settings, $cpanel_host, $purge_cache ) {
         if ( $cpanel_settings && is_array( $cpanel_settings ) ) {
-            $previous_host = $cpanel_settings['cpanel_host'];
+            $previous_host = ( isset( $cpanel_settings['cpanel_host'] ) ? $cpanel_settings['cpanel_host'] : '' );
             $cpanel_settings['cpanel_host'] = $cpanel_host;
             update_option( 'cpanel_settings_auto_install_free_ssl', $cpanel_settings );
         } else {
@@ -387,7 +497,6 @@ class Factory {
                 'cpanel_host' => $cpanel_host,
             ] );
         }
-        return $cpanel_host;
     }
 
     /**
@@ -409,99 +518,6 @@ class Factory {
             'endsWith2083Port' => $endsWithPort,
             'string'           => $string,
         ];
-    }
-
-    /**
-     * Returns the cPanel host
-     * Improved since 3.5.1
-     * @param $hostname
-     * @param $is_reset_host
-     * @param $strict_check
-     *
-     * @return false|string
-     */
-    public function getcPanelHost_v1( $hostname, $is_reset_host = false, $strict_check = false ) {
-        $cpanel_settings = ( get_option( 'cpanel_settings_auto_install_free_ssl' ) ? get_option( 'cpanel_settings_auto_install_free_ssl' ) : add_option( 'cpanel_settings_auto_install_free_ssl' ) );
-        if ( isset( $cpanel_settings['cpanel_host'] ) ) {
-            return $cpanel_settings['cpanel_host'];
-        }
-        //@todo use gethostbyname('localhost') too
-        $cpanel_host = false;
-        if ( !aifs_is_os_windows() ) {
-            $hostname = str_replace( ['https://', 'https://www.', 'http://www.'], 'http://', $hostname );
-            $handle = curl_init();
-            curl_setopt( $handle, CURLOPT_URL, $hostname . (( $strict_check ? '/cpanel' : ':2083' )) );
-            curl_setopt( $handle, CURLOPT_SSL_VERIFYHOST, false );
-            curl_setopt( $handle, CURLOPT_SSL_VERIFYPEER, false );
-            curl_setopt( $handle, CURLOPT_RETURNTRANSFER, true );
-            curl_setopt( $handle, CURLOPT_HEADER, true );
-            curl_setopt( $handle, CURLOPT_TIMEOUT, 5 );
-            // @since 3.2.3
-            //if ( $strict_check ) {
-            curl_setopt( $handle, CURLOPT_FOLLOWLOCATION, true );
-            //}
-            $response = curl_exec( $handle );
-            $effective_url = curl_getinfo( $handle, CURLINFO_EFFECTIVE_URL );
-            $redirect_url = curl_getinfo( $handle, CURLINFO_REDIRECT_URL );
-            $http_status_code = curl_getinfo( $handle, CURLINFO_HTTP_CODE );
-            $error = curl_errno( $handle );
-            if ( $http_status_code !== 3 ) {
-                if ( $is_reset_host === false && $http_status_code === 301 ) {
-                    if ( isset( $redirect_url ) ) {
-                        $response = $redirect_url;
-                    }
-                    $start = strpos( $response, 'https://' );
-                    $end = strpos( $response, ':2083' );
-                    $link = substr( $response, $start, $end - $start );
-                    if ( strpos( $link, 'www.' ) !== false && strpos( $link, 'www.' ) === 0 ) {
-                        //If www. found at the beginning, remove it
-                        $link = substr( $link, 4 );
-                    }
-                    return $this->getcPanelHost_v1( $link );
-                }
-                if ( in_array( $http_status_code, [400] ) ) {
-                    $link = str_replace( 'http://', 'https://', $hostname );
-                    return $this->getcPanelHost_v1( $link );
-                }
-                if ( $http_status_code === 0 ) {
-                    return $this->getcPanelHost_v1( $hostname );
-                }
-                $checkURL = $this->checkcPanelInUrl( $effective_url );
-                //Improved since 3.5.1
-                if ( ($http_status_code === 301 || $http_status_code === 200) && ($checkURL['endsWith2083Port'] || $checkURL['endsWithCpanel']) && strpos( $response, 'cPanel' ) !== false ) {
-                    $hostname = $checkURL['string'];
-                    if ( $checkURL['endsWith2083Port'] ) {
-                        //if(strpos($response, 'login') !== false)
-                        $hostname = str_replace( ['https://', 'http://'], '', $hostname );
-                        $hostname = substr( $hostname, 0, -5 );
-                    } else {
-                        if ( $checkURL['endsWithCpanel'] ) {
-                            //if(strpos($response, ':2083') !== false || strpos($response, ':2082') !== false)
-                            $hostname = str_replace( ['https://', 'http://'], '', $hostname );
-                            $hostname = substr( $hostname, 0, -7 );
-                        }
-                    }
-                    if ( strpos( $hostname, 'www.' ) !== false && strpos( $hostname, 'www.' ) === 0 ) {
-                        //If www. found at the beginning, remove it
-                        $hostname = substr( $hostname, 4 );
-                    }
-                    $cpanel_host = $hostname;
-                } else {
-                    if ( !$this->is_parent_dir_restricted_by_open_basedir() && is_dir( '/usr/local/cpanel' ) || $this->port_exists( 2083 ) || $this->port_exists( 2082 ) ) {
-                        //Improved since 3.5.1
-                        $hostname = str_replace( ['https://', 'http://'], '', $hostname );
-                        if ( strpos( $hostname, 'www.' ) !== false && strpos( $hostname, 'www.' ) === 0 ) {
-                            //If www. found at the beginning, remove it
-                            $hostname = substr( $hostname, 4 );
-                        }
-                        $cpanel_host = $hostname;
-                    }
-                }
-            }
-        }
-        $cpanel_settings['cpanel_host'] = $cpanel_host;
-        update_option( 'cpanel_settings_auto_install_free_ssl', $cpanel_settings );
-        return $cpanel_host;
     }
 
     /**
@@ -769,13 +785,36 @@ class Factory {
     }
 
     /**
-     * @param string $file_path
-     * @param null $file_name
-     * @param bool $delete_file
+     * @param string      $file_path
+     * @param null|string $file_name
+     * @param bool        $delete_file
+     * @param null|string $allowed_base_dir Optional. When given, $file_path must
+     *                                       resolve (via realpath()) inside this
+     *                                       directory or the file is refused --
+     *                                       defence in depth for callers that build
+     *                                       $file_path from user-controlled input
+     *                                       (C-3).
      */
-    public function download_file( $file_path, $file_name = null, $delete_file = false ) {
+    public function download_file(
+        $file_path,
+        $file_name = null,
+        $delete_file = false,
+        $allowed_base_dir = null
+    ) {
         $file_name = ( is_null( $file_name ) ? basename( $file_path ) : $file_name );
         //if file name was provided, take it
+        if ( null !== $allowed_base_dir ) {
+            // Resolve the *parent* directory rather than $file_path itself: the file
+            // may not exist on disk yet at this point (e.g. it is still being
+            // written), but its containing directory always must for a legitimate
+            // call.
+            $real_base_dir = realpath( $allowed_base_dir );
+            $real_parent_dir = realpath( dirname( $file_path ) );
+            if ( false === $real_base_dir || false === $real_parent_dir || 0 !== strpos( $real_parent_dir . DIRECTORY_SEPARATOR, $real_base_dir . DIRECTORY_SEPARATOR ) ) {
+                $this->logger->log_v2( 'error', 'download_file() refused a path outside the allowed base directory.' );
+                return;
+            }
+        }
         if ( file_exists( $file_path ) ) {
             header( 'Content-Description: File Transfer' );
             header( 'Content-Type: application/octet-stream' );

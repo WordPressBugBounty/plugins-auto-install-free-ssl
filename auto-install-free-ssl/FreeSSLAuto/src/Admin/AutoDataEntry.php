@@ -52,6 +52,16 @@ class AutoDataEntry
         $this->is_cpanel = $is_cpanel;
 
     }
+
+	/**
+	 * Inject a custom admin factory (used by unit tests).
+	 *
+	 * @param Factory $factory Factory instance.
+	 */
+	public function setFactory($factory)
+	{
+		$this->factory = $factory;
+	}
     
     
     /**
