@@ -5,7 +5,7 @@ License URI: http://www.gnu.org/licenses/gpl-3.0.html
 Tags: free ssl, ssl certificate, https redirect, free ssl certificate, ssl security
 Requires at least: 4.1
 Tested up to: 7.1
-Stable tag: 5.0.0
+Stable tag: 5.0.1
 Requires PHP: 5.6
 
 Generate & install Free SSL Certificates for WordPress, HTTPS redirect, get PADLOCK in the browser, get automatic Renewal Reminders from plugin.
@@ -478,6 +478,11 @@ If you have an unlimited site license and created a cron job manually, ensure yo
 
 
 == Changelog ==
+
+= 5.0.1 =
+* Updated the Freemius WordPress SDK to the latest version
+* effectiveTLDs.inc.php was updated from the latest Public Suffix List.
+* [Pro] Fix: Decrypting a malformed, truncated, or non-encrypted stored credential (cPanel or DNS Service Provider) no longer causes a fatal TypeError on PHP below 8.0; it now fails safely.
 
 = 5.0.0 =
 * [Pro] Feature: GoDaddy DNS Service Provider entries can now use either a classic API Key/Secret pair or a newer Personal Access Token (PAT) for wildcard SSL DNS-01 validation; GoDaddy TXT records are updated in place on renewal instead of being deleted and recreated.
